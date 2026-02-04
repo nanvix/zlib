@@ -183,7 +183,10 @@ jobs:
           - Name: ${NANVIX_NAME}
           - Published: ${NANVIX_PUBLISHED}
           - Commit: [${NANVIX_SHA_FULL}](https://github.com/nanvix/nanvix/commit/${NANVIX_SHA_FULL})
-          - Nanvix SHA: \`${NANVIX_SHA}\`" \
+          - Nanvix SHA: \`${NANVIX_SHA}\`
+
+          **Dependencies (exact tags for reproducibility):**
+          - None (base library)" \
             --latest \
             release-assets/*.tar.bz2
 
