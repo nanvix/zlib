@@ -54,6 +54,12 @@ jobs:
             echo "::error::No ${{ matrix.platform }} ${{ matrix.process-mode }} artifact found"
             exit 1
           fi
+          # Extract Nanvix commit SHA from artifact filename (format: nanvix-platform-mode-release-SHA.tar.bz2)
+          NANVIX_SHA_FULL=$(basename "$ARTIFACT_FILE" | sed -E 's/.*-([a-f0-9]{40})\.tar\.bz2$/\1/')
+          NANVIX_SHA="${NANVIX_SHA_FULL::7}"
+          echo "Nanvix commit SHA: $NANVIX_SHA_FULL (short: $NANVIX_SHA)"
+          echo "NANVIX_SHA=$NANVIX_SHA" >> "$GITHUB_ENV"
+          echo "NANVIX_SHA_FULL=$NANVIX_SHA_FULL" >> "$GITHUB_ENV"
           mkdir -p nanvix-artifacts/extracted
           tar -xjf "$ARTIFACT_FILE" -C nanvix-artifacts/extracted
           NANVIX_HOME=$(find nanvix-artifacts/extracted -maxdepth 2 -type d -name "bin" -exec dirname {} \; | head -1)
@@ -121,11 +127,13 @@ jobs:
           RELEASE_INFO=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$API_URL")
           NANVIX_NAME=$(echo "$RELEASE_INFO" | jq -r '.name // "latest"')
           NANVIX_PUBLISHED=$(echo "$RELEASE_INFO" | jq -r '.published_at')
-          NANVIX_SHA=$(echo "$RELEASE_INFO" | jq -r '.target_commitish')
+          NANVIX_SHA_FULL=$(echo "$RELEASE_INFO" | jq -r '.target_commitish')
+          NANVIX_SHA="${NANVIX_SHA_FULL::7}"
           NANVIX_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
           echo "name=${NANVIX_NAME}" >> "$GITHUB_OUTPUT"
           echo "published=${NANVIX_PUBLISHED}" >> "$GITHUB_OUTPUT"
           echo "sha=${NANVIX_SHA}" >> "$GITHUB_OUTPUT"
+          echo "sha_full=${NANVIX_SHA_FULL}" >> "$GITHUB_OUTPUT"
           echo "id=${NANVIX_ID}" >> "$GITHUB_OUTPUT"
 
       - name: Create Latest Release
@@ -134,10 +142,13 @@ jobs:
           NANVIX_NAME: ${{ steps.nanvix-release.outputs.name }}
           NANVIX_PUBLISHED: ${{ steps.nanvix-release.outputs.published }}
           NANVIX_SHA: ${{ steps.nanvix-release.outputs.sha }}
+          NANVIX_SHA_FULL: ${{ steps.nanvix-release.outputs.sha_full }}
         run: |
-          RELEASE_TAG="${GITHUB_SHA::7}"
+          # Release tag format: {commit-sha}-nanvix-{nanvix-sha}
+          # This enables easy lookup of releases built with a specific Nanvix version
+          RELEASE_TAG="${GITHUB_SHA::7}-nanvix-${NANVIX_SHA}"
           gh release create "$RELEASE_TAG" \
-            --title "Build ${RELEASE_TAG}" \
+            --title "Build ${GITHUB_SHA::7} (Nanvix ${NANVIX_SHA})" \
             --notes "Automated build from branch ${{ github.ref_name }} at commit ${{ github.sha }}.
 
           **Build Information:**
@@ -148,7 +159,8 @@ jobs:
           **Nanvix Release:**
           - Name: ${NANVIX_NAME}
           - Published: ${NANVIX_PUBLISHED}
-          - Commit: [${NANVIX_SHA}](https://github.com/nanvix/nanvix/commit/${NANVIX_SHA})" \
+          - Commit: [${NANVIX_SHA_FULL}](https://github.com/nanvix/nanvix/commit/${NANVIX_SHA_FULL})
+          - Nanvix SHA: \`${NANVIX_SHA}\`" \
             --latest \
             release-assets/*.tar.bz2
 
