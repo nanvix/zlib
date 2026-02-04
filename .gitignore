@@ -36,3 +36,5 @@ contrib/nuget/obj
 *.included
 
 .z.cache
+minigzip.elf
+example.elf
