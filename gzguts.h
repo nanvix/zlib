@@ -38,6 +38,11 @@
 #  include <io.h>
 #endif
 
+/* POSIX I/O declarations for lseek, read, write, close */
+#ifndef _WIN32
+#  include <unistd.h>
+#endif
+
 #if defined(_WIN32)
 #  define WIDECHAR
 #endif

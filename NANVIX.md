@@ -180,6 +180,12 @@ The following changes were made to support Nanvix.
 | `NANVIX.md` | This documentation file |
 | `.github/workflows/nanvix-ci.yml` | CI workflow for automated builds |
 
+### Source Code Changes
+
+| File | Change |
+|------|--------|
+| `gzguts.h` | Added `#include <unistd.h>` for POSIX I/O declarations (`lseek`, `read`, `write`, `close`) |
+
 ---
 
 ## Known Limitations
@@ -187,7 +193,6 @@ The following changes were made to support Nanvix.
 | Limitation | Impact |
 |------------|--------|
 | **No shared libraries** | Only static library (`libz.a`) is built |
-| **No gzip file I/O** | `gzopen()`, `gzread()`, `gzwrite()` may have limited functionality |
 | **Static linking only** | All executables are statically linked |
 
 ---
