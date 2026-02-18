@@ -65,11 +65,14 @@ ifdef CONFIG_NANVIX
       -w $(DOCKER_WORKSPACE_PATH) \
       -e HOME=/tmp \
       $(NANVIX_DOCKER_IMAGE)
+    DOCKER_KVM_GID := $(shell stat -c '%g' /dev/kvm 2>/dev/null || echo 0)
     DOCKER_RUN_FUNCTIONAL := docker run --rm --device /dev/kvm \
+      --user $(DOCKER_UID):$(DOCKER_GID) --group-add $(DOCKER_KVM_GID) \
       -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
       -v $(SYSROOT_PATH):$(DOCKER_SYSROOT_PATH) \
       -w $(DOCKER_SYSROOT_PATH) \
       -e HOME=/tmp \
+      -e USER=$(shell whoami) \
       $(NANVIX_DOCKER_IMAGE)
     CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
     AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
@@ -187,7 +190,7 @@ ifdef CONFIG_NANVIX_DOCKER
 	@echo "  PASS: example test (exit code 0)"
 else
 	@echo "  Running example$(EXE) via nanvixd.elf..."
-	cd "$(SYSROOT_PATH)" && timeout 120 ./bin/nanvixd.elf -- $(abspath example$(EXE)) /tmp/zlib_test
+	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath example$(EXE)) /tmp/zlib_test
 	@echo "  PASS: example test (exit code 0)"
 endif
 	@echo "  PASS: zlib functional tests"
