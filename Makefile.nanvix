@@ -96,7 +96,7 @@ ifdef CONFIG_NANVIX
   endif
 else
   ifneq ($(MAKECMDGOALS),clean)
-    $(error CONFIG_NANVIX must be set. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/sysroot)
+    $(error CONFIG_NANVIX must be set to 'y'. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/sysroot)
   endif
   EXE = .elf
 endif
@@ -186,7 +186,7 @@ test-functional: test-integration
 ifdef CONFIG_NANVIX_DOCKER
 	@echo "  Running example$(EXE) via nanvixd.elf (Docker)..."
 	$(DOCKER_RUN_FUNCTIONAL) sh -c \
-	  'timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/example$(EXE) /tmp/zlib_test'
+	  'timeout --foreground 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/example$(EXE) /tmp/zlib_test'
 	@echo "  PASS: example test (exit code 0)"
 else
 	@echo "  Running example$(EXE) via nanvixd.elf..."
@@ -212,6 +212,8 @@ package: all
 	-cp -f $(TEST_PROGS) dist/$(ARTIFACT_NAME)/sysroot/bin/ 2>/dev/null || true
 	tar -cjf dist/$(ARTIFACT_NAME).tar.bz2 -C dist/$(ARTIFACT_NAME) sysroot
 	@echo "  Package: dist/$(ARTIFACT_NAME).tar.bz2"
+	@echo "  Contents:"
+	@tar tjf dist/$(ARTIFACT_NAME).tar.bz2 | head -20
 
 # ===========================================================================
 # Verify Package
