@@ -104,6 +104,7 @@ endif
 PREFIX ?= $(SYSROOT_PATH)
 PLATFORM ?= unknown
 PROCESS_MODE ?= unknown
+MEMORY_SIZE ?= unknown
 
 # ===========================================================================
 # Build Configuration
@@ -228,7 +229,7 @@ test: test-smoke test-integration test-functional
 
 package: all
 	@echo "=== Packaging zlib release ==="
-	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE))
+	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
 	rm -rf dist/$(ARTIFACT_NAME)
 	mkdir -p dist/$(ARTIFACT_NAME)/sysroot/lib dist/$(ARTIFACT_NAME)/sysroot/include dist/$(ARTIFACT_NAME)/sysroot/bin
 	cp -f $(STATICLIB) dist/$(ARTIFACT_NAME)/sysroot/lib/
@@ -245,7 +246,7 @@ package: all
 
 verify-package:
 	@echo "=== Verifying zlib package ==="
-	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE))
+	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
 	@TARBALL="dist/$(ARTIFACT_NAME).tar.bz2"; \
 	if [ ! -f "$$TARBALL" ]; then \
 	  echo "FAIL: Package tarball not found: $$TARBALL"; exit 1; \
