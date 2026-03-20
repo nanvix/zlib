@@ -67,7 +67,7 @@ class ZlibBuild(ZScript):
             tag=tag,
             gh_token=self.config.get(CFG_GH_TOKEN),
         )
-        sysroot.verify(list(self.SYSROOT_REQUIRED_FILES))
+        sysroot.verify(self.sysroot_required_files())
         self.config.set(CFG_SYSROOT, str(sysroot.path))
         self.config.save()
 
@@ -76,12 +76,19 @@ class ZlibBuild(ZScript):
         self.run(*self._make_args("all"), cwd=self.repo_root)
 
     def test(self) -> None:
-        """Run the zlib test suite (smoke + integration + functional)."""
-        self.run(*self._make_args("test"), cwd=self.repo_root)
+        """Run the zlib test suite.
+
+        Without targets, runs the full suite (smoke + integration + functional).
+        With targets (e.g. ``./z test -- test-smoke test-integration``), passes
+        them directly to the Makefile.
+        """
+        targets = self.targets if self.targets else ["test"]
+        self.run(*self._make_args(*targets), cwd=self.repo_root)
 
     def release(self) -> None:
-        """Package the zlib release tarball."""
+        """Package the zlib release tarball and verify it."""
         self.run(*self._make_args("package"), cwd=self.repo_root)
+        self.run(*self._make_args("verify-package"), cwd=self.repo_root)
 
     def clean(self) -> None:
         """Remove build artifacts."""

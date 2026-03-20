@@ -45,3 +45,4 @@ example.elf
 .nanvix/sysroot/
 .nanvix/buildroot/
 .nanvix/env.json
+dist/
