@@ -11,10 +11,7 @@ Usage:
     ./z clean     # Remove build artifacts
 """
 
-from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, CFG_TAG, CFG_TOOLCHAIN, Sysroot, ZScript, log
-
-# Exit codes (mirrors nanvix-zutil convention).
-_EXIT_MISSING_DEP = 3
+from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, CFG_TAG, CFG_TOOLCHAIN, EXIT_MISSING_DEP, Sysroot, ZScript, log
 
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_CONFIG = "CONFIG_NANVIX"
@@ -36,7 +33,7 @@ class ZlibBuild(ZScript):
         if not sysroot:
             log.fatal(
                 f"{CFG_SYSROOT} is not set.",
-                code=_EXIT_MISSING_DEP,
+                code=EXIT_MISSING_DEP,
                 hint="Run `./z setup` first to download the sysroot.",
             )
         toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix")
@@ -61,7 +58,7 @@ class ZlibBuild(ZScript):
         """Download the Nanvix sysroot."""
         tag = self.config.get(CFG_TAG, self.NANVIX_TAG)
         if not tag:
-            log.fatal(f"{CFG_TAG} is not set.", code=_EXIT_MISSING_DEP)
+            log.fatal(f"{CFG_TAG} is not set.", code=EXIT_MISSING_DEP)
 
         sysroot = Sysroot.download(
             machine=self.config.machine,
