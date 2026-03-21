@@ -144,7 +144,28 @@ jobs:
           RELEASE_INFO=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$API_URL")
           NANVIX_NAME=$(echo "$RELEASE_INFO" | jq -r '.name // "latest"')
           NANVIX_PUBLISHED=$(echo "$RELEASE_INFO" | jq -r '.published_at')
-          NANVIX_SHA_FULL=$(echo "$RELEASE_INFO" | jq -r '.target_commitish // "unknown"')
+          NANVIX_TAG=$(echo "$RELEASE_INFO" | jq -r '.tag_name // empty')
+          NANVIX_TARGET=$(echo "$RELEASE_INFO" | jq -r '.target_commitish // empty')
+
+          # Resolve release ref to a full commit SHA.
+          REF="${NANVIX_TAG:-$NANVIX_TARGET}"
+          if [[ -z "$REF" ]]; then
+            echo "::error::Unable to determine Nanvix release ref"
+            exit 1
+          fi
+
+          if [[ "$REF" =~ ^[0-9a-f]{40}$ ]]; then
+            NANVIX_SHA_FULL="$REF"
+          else
+            COMMIT_API_URL="https://api.github.com/repos/nanvix/nanvix/commits/${REF}"
+            NANVIX_SHA_FULL=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$COMMIT_API_URL" | jq -r '.sha // empty')
+          fi
+
+          if [[ -z "$NANVIX_SHA_FULL" || ! "$NANVIX_SHA_FULL" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Failed to resolve Nanvix ref '${REF}' to a commit SHA"
+            exit 1
+          fi
+
           NANVIX_SHA="${NANVIX_SHA_FULL::7}"
 
           echo "name=${NANVIX_NAME}" >> "$GITHUB_OUTPUT"
