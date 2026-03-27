@@ -111,11 +111,16 @@ class ZlibBuild(ZScript):
         mem = self.config.memory_size
         name = f"zlib-{machine}-{mode}-{mem}"
         dist = self.repo_root / "dist" / name
+        import shutil
+        # Ensure a clean package layout to avoid stale files from previous builds.
+        dist_parent = self.repo_root / "dist"
+        dist_parent.mkdir(parents=True, exist_ok=True)
+        if dist.exists():
+            shutil.rmtree(dist)
         # Create package layout.
         (dist / "sysroot" / "lib").mkdir(parents=True, exist_ok=True)
         (dist / "sysroot" / "include").mkdir(parents=True, exist_ok=True)
         (dist / "sysroot" / "bin").mkdir(parents=True, exist_ok=True)
-        import shutil
         shutil.copy2(self.repo_root / "libz.a", dist / "sysroot" / "lib" / "libz.a")
         shutil.copy2(self.repo_root / "zlib.h", dist / "sysroot" / "include" / "zlib.h")
         shutil.copy2(self.repo_root / "zconf.h", dist / "sysroot" / "include" / "zconf.h")
