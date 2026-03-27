@@ -15,13 +15,8 @@ $ErrorActionPreference = "Stop"
 $MIN_MAJOR = 3
 $MIN_MINOR = 12
 
-# Exit codes (mirrors nanvix-zutil convention).
-$EXIT_MISSING_DEP = 3
-
-# nanvix-zutil release to install in the project venv.
-$ZUTIL_TAG = "v0.2.2"
+# nanvix-zutil release base URL.
 $ZUTIL_RELEASE_BASE = "https://github.com/nanvix/zutils/releases/download"
-$ZUTIL_HASH = "sha256:dc28bb5b83fe0afebb89a3b02b334d4753ba362328d5b4f32f79c2cb8df6ba8a"
 
 function Find-Python {
     # Prefer version-suffixed interpreters (e.g., python3.12, python3.13) first,
@@ -77,7 +72,7 @@ $python = Find-Python
 if ($null -eq $python) {
     Write-Warning "error: Python ${MIN_MAJOR}.${MIN_MINOR}+ not found in PATH."
     Write-Host "hint:  Install Python 3.12+ and ensure it is on your PATH." -ForegroundColor Yellow
-    exit $EXIT_MISSING_DEP
+    exit 3
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -92,7 +87,7 @@ if ($IsWindows) {
 if (-not (Test-Path $zScript)) {
     Write-Warning "error: $zScript not found."
     Write-Host "hint:  Create .nanvix/z.py with a ZScript subclass." -ForegroundColor Yellow
-    exit $EXIT_MISSING_DEP
+    exit 3
 }
 
 # Bootstrap: create venv and install nanvix-zutil if needed.
@@ -105,6 +100,42 @@ if (-not (Test-Path $venvPython)) {
         Write-Host "bootstrap: installing nanvix-zutil (editable) …" -ForegroundColor Cyan
         & $venvPython -m pip install -q -e $zutilPath
     } else {
+        # Resolve the latest nanvix-zutil release tag and wheel hash from
+        # the GitHub Releases API.  The SHA-256 hash is embedded in the
+        # release notes, so no extra network call is needed.
+        Write-Host "bootstrap: resolving latest nanvix-zutil release …" -ForegroundColor Cyan
+        $releaseScript = @'
+import json, os, re, sys, urllib.request
+try:
+    headers = {"Accept": "application/vnd.github+json"}
+    token = os.environ.get("GH_TOKEN", "")
+    if token:
+        headers["Authorization"] = "token " + token
+    req = urllib.request.Request(
+        "https://api.github.com/repos/nanvix/zutils/releases/latest",
+        headers=headers,
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    tag = data["tag_name"]
+    body = data.get("body", "")
+    m = re.search(r"sha256:([a-fA-F0-9]{64})", body)
+    if not m:
+        sys.exit(1)
+    print(tag + " sha256:" + m.group(1).lower())
+except Exception as e:
+    print("error: " + str(e), file=sys.stderr)
+    sys.exit(1)
+'@
+        $zutilReleaseInfo = & $python -c $releaseScript 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $zutilReleaseInfo) {
+            Write-Warning "error: failed to resolve latest nanvix-zutil release."
+            Write-Host "hint:  Set GH_TOKEN or NANVIX_ZUTIL_PATH to install manually." -ForegroundColor Yellow
+            exit 4
+        }
+        $parts = $zutilReleaseInfo.Trim().Split(" ")
+        $ZUTIL_TAG = $parts[0]
+        $ZUTIL_HASH = $parts[1]
         $version = $ZUTIL_TAG.TrimStart("v").Replace("-", "")
         $whlName = "nanvix_zutil-${version}-py3-none-any.whl"
         $whlUrl = "${ZUTIL_RELEASE_BASE}/${ZUTIL_TAG}/${whlName}"
