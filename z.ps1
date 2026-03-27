@@ -100,12 +100,18 @@ if (-not (Test-Path $venvPython)) {
         Write-Host "bootstrap: installing nanvix-zutil (editable) …" -ForegroundColor Cyan
         & $venvPython -m pip install -q -e $zutilPath
     } else {
-        # Resolve the latest nanvix-zutil release tag and wheel hash from
-        # the GitHub Releases API.  The SHA-256 hash is embedded in the
-        # release notes, so no extra network call is needed.
+        # Resolve the latest nanvix-zutil release tag from the GitHub
+        # Releases API.
+        #
+        # NOTE: We intentionally do NOT use pip --require-hashes here.
+        # That mode demands hashes for ALL transitive dependencies (e.g.
+        # tomli-w), not just the top-level wheel.  Since we can't
+        # predict or pin transitive dep versions in the release notes,
+        # --require-hashes is impractical.  The wheel URL is resolved
+        # over HTTPS from the GitHub API — same trust boundary.
         Write-Host "bootstrap: resolving latest nanvix-zutil release …" -ForegroundColor Cyan
         $releaseScript = @'
-import json, os, re, sys, urllib.request
+import json, os, sys, urllib.request
 try:
     headers = {"Accept": "application/vnd.github+json"}
     token = os.environ.get("GH_TOKEN", "")
@@ -118,16 +124,20 @@ try:
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
     tag = data["tag_name"]
-    body = data.get("body", "")
-    m = re.search(r"sha256:([a-fA-F0-9]{64})", body)
-    if not m:
+    whl = next(
+        (a["browser_download_url"] for a in data.get("assets", [])
+         if a["name"].endswith(".whl")),
+        None,
+    )
+    if not whl:
+        print("error: no .whl asset in release", file=sys.stderr)
         sys.exit(1)
-    print(tag + " sha256:" + m.group(1).lower())
+    print(tag + " " + whl)
 except Exception as e:
     print("error: " + str(e), file=sys.stderr)
     sys.exit(1)
 '@
-        $zutilReleaseInfo = & $python -c $releaseScript 2>$null
+        $zutilReleaseInfo = & $python -c $releaseScript
         if ($LASTEXITCODE -ne 0 -or -not $zutilReleaseInfo) {
             Write-Warning "error: failed to resolve latest nanvix-zutil release."
             Write-Host "hint:  Set GH_TOKEN or NANVIX_ZUTIL_PATH to install manually." -ForegroundColor Yellow
@@ -135,18 +145,9 @@ except Exception as e:
         }
         $parts = $zutilReleaseInfo.Trim().Split(" ")
         $ZUTIL_TAG = $parts[0]
-        $ZUTIL_HASH = $parts[1]
-        $version = $ZUTIL_TAG.TrimStart("v").Replace("-", "")
-        $whlName = "nanvix_zutil-${version}-py3-none-any.whl"
-        $whlUrl = "${ZUTIL_RELEASE_BASE}/${ZUTIL_TAG}/${whlName}"
+        $whlUrl = $parts[1]
         Write-Host "bootstrap: installing nanvix-zutil ($ZUTIL_TAG) …" -ForegroundColor Cyan
-        $tmpReq = [System.IO.Path]::GetTempFileName()
-        Set-Content -Path $tmpReq -Value "nanvix_zutil @ $whlUrl --hash=$ZUTIL_HASH"
-        try {
-            & $venvPython -m pip install -q --require-hashes -r $tmpReq
-        } finally {
-            Remove-Item -Path $tmpReq -ErrorAction SilentlyContinue
-        }
+        & $venvPython -m pip install -q $whlUrl
     }
 }
 

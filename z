@@ -96,12 +96,18 @@ if [[ ! -f "${VENV_PYTHON}" ]]; then
         echo "bootstrap: installing nanvix-zutil (editable) …" >&2
         "${VENV_PYTHON}" -m pip install -q -e "${NANVIX_ZUTIL_PATH}"
     else
-        # Resolve the latest nanvix-zutil release tag and wheel hash from
-        # the GitHub Releases API.  The SHA-256 hash is embedded in the
-        # release notes, so no extra network call is needed.
+        # Resolve the latest nanvix-zutil release tag from the GitHub
+        # Releases API.
+        #
+        # NOTE: We intentionally do NOT use pip --require-hashes here.
+        # That mode demands hashes for ALL transitive dependencies (e.g.
+        # tomli-w), not just the top-level wheel.  Since we can't
+        # predict or pin transitive dep versions in the release notes,
+        # --require-hashes is impractical.  The wheel URL is resolved
+        # over HTTPS from the GitHub API — same trust boundary.
         echo "bootstrap: resolving latest nanvix-zutil release …" >&2
         zutil_release_info=$(run_python -c '
-import json, os, re, sys, urllib.request
+import json, os, sys, urllib.request
 try:
     headers = {"Accept": "application/vnd.github+json"}
     token = os.environ.get("GH_TOKEN", "")
@@ -114,11 +120,16 @@ try:
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
     tag = data["tag_name"]
-    body = data.get("body", "")
-    m = re.search(r"sha256:([a-fA-F0-9]{64})", body)
-    if not m:
+    # Find the wheel asset URL.
+    whl = next(
+        (a["browser_download_url"] for a in data.get("assets", [])
+         if a["name"].endswith(".whl")),
+        None,
+    )
+    if not whl:
+        print("error: no .whl asset in release", file=sys.stderr)
         sys.exit(1)
-    print(tag + " sha256:" + m.group(1).lower())
+    print(tag + " " + whl)
 except Exception as e:
     print("error: " + str(e), file=sys.stderr)
     sys.exit(1)
@@ -128,18 +139,9 @@ except Exception as e:
             exit 4
         }
         ZUTIL_TAG=$(echo "${zutil_release_info}" | cut -d' ' -f1)
-        ZUTIL_HASH=$(echo "${zutil_release_info}" | cut -d' ' -f2)
-        version="${ZUTIL_TAG#v}"
-        version="${version//-/}"
-        whl_name="nanvix_zutil-${version}-py3-none-any.whl"
-        whl_url="${ZUTIL_RELEASE_BASE}/${ZUTIL_TAG}/${whl_name}"
+        whl_url=$(echo "${zutil_release_info}" | cut -d' ' -f2)
         echo "bootstrap: installing nanvix-zutil (${ZUTIL_TAG}) …" >&2
-        tmp_req=$(mktemp)
-        trap 'rm -f "${tmp_req}"' EXIT
-        echo "nanvix_zutil @ ${whl_url} --hash=${ZUTIL_HASH}" > "${tmp_req}"
-        "${VENV_PYTHON}" -m pip install -q --require-hashes -r "${tmp_req}"
-        rm -f "${tmp_req}"
-        trap - EXIT
+        "${VENV_PYTHON}" -m pip install -q "${whl_url}"
     fi
 fi
 
