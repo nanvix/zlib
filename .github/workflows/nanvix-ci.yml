@@ -37,9 +37,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
-          WHEEL_URL=$(gh api repos/nanvix/zutils/releases/latest \
-            --jq '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
-          pip install "$WHEEL_URL"
+          set -euo pipefail
+          RELEASE=$(gh api repos/nanvix/zutils/releases/latest)
+          WHEEL_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
+          WHEEL_HASH=$(echo "$RELEASE" | jq -r '.body' | grep -oP 'sha256:[a-fA-F0-9]{64}' | head -1)
+          if [[ -n "$WHEEL_HASH" ]]; then
+            pip install "$WHEEL_URL" --require-hashes --hash="$WHEEL_HASH"
+          else
+            echo "::warning::No sha256 hash found in release notes — installing without verification"
+            pip install "$WHEEL_URL"
+          fi
 
       - name: Resolve lockfile and extract release info
         id: resolve
