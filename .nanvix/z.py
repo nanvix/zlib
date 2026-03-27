@@ -13,7 +13,7 @@ Usage:
 
 from pathlib import Path
 
-from nanvix_zutil import ZScript, log, EXIT_BUILD_FAILURE
+from nanvix_zutil import CFG_SYSROOT, CFG_TOOLCHAIN, ZScript, log, EXIT_BUILD_FAILURE
 
 # zlib source files (matching upstream Makefile).
 _OBJZ_SRCS = [
@@ -29,6 +29,22 @@ _CFLAGS = ["-O2", "-Wall", "-D_GNU_SOURCE", "-msse2", "-mfpmath=sse"]
 
 class ZlibBuild(ZScript):
     """Build script for nanvix/zlib."""
+
+    def _toolchain(self) -> Path:
+        """Return the toolchain root, translated for Docker if active."""
+        host = Path(self.config.get(CFG_TOOLCHAIN, "/opt/nanvix") or "/opt/nanvix")
+        return self.translate_path(host) if self.docker else host
+
+    def _sysroot(self) -> Path:
+        """Return the sysroot path, translated for Docker if active."""
+        sysroot_str = self.config.get(CFG_SYSROOT, "")
+        if not sysroot_str:
+            log.fatal(
+                "Sysroot not configured — run './z setup' first.",
+                code=EXIT_BUILD_FAILURE,
+            )
+        host = Path(sysroot_str)
+        return self.translate_path(host) if self.docker else host
 
     def _cc(self) -> str:
         return f"{self._toolchain()}/bin/i686-nanvix-gcc"
