@@ -41,12 +41,14 @@ jobs:
           RELEASE=$(gh api repos/nanvix/zutils/releases/latest)
           WHEEL_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
           WHEEL_HASH=$(echo "$RELEASE" | jq -r '.body' | grep -oP 'sha256:[a-fA-F0-9]{64}' | head -1)
-          if [[ -n "$WHEEL_HASH" ]]; then
-            pip install "$WHEEL_URL" --require-hashes --hash="$WHEEL_HASH"
-          else
+          if [[ -z "$WHEEL_HASH" ]]; then
             echo "::error::No sha256 hash found in release notes for nanvix-zutil — cannot verify wheel integrity"
             exit 1
           fi
+          TMP_REQ=$(mktemp)
+          trap 'rm -f "$TMP_REQ"' EXIT
+          echo "nanvix_zutil @ $WHEEL_URL --hash=$WHEEL_HASH" > "$TMP_REQ"
+          pip install --require-hashes -r "$TMP_REQ"
 
       - name: Resolve lockfile and extract release info
         id: resolve
