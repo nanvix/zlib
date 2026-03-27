@@ -40,7 +40,7 @@ jobs:
           WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/nanvix/zutils/releases/latest \
             | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
-          pip install "$WHEEL_URL"
+          python3 -m pip install "$WHEEL_URL"
 
       - name: Resolve lockfile and extract release info
         id: resolve
@@ -79,7 +79,8 @@ jobs:
           WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/nanvix/zutils/releases/latest \
             | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
-          pip install "$WHEEL_URL"
+          python3 -m ensurepip -q 2>/dev/null || true
+          python3 -m pip install "$WHEEL_URL"
 
       - name: Setup
         env:
@@ -163,7 +164,7 @@ jobs:
           WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/nanvix/zutils/releases/latest \
             | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
-          pip install "$WHEEL_URL"
+          python3 -m pip install "$WHEEL_URL"
           nanvix-zutil resolve > /dev/null
           nanvix-zutil lock --shallow
           cp .nanvix/nanvix.lock release-assets/nanvix.lock
