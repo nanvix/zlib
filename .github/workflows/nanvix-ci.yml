@@ -76,11 +76,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
+          python3 -m venv /tmp/zutil-venv
           WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/nanvix/zutils/releases/latest \
             | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
-          python3 -m ensurepip -q 2>/dev/null || true
-          python3 -m pip install "$WHEEL_URL"
+          /tmp/zutil-venv/bin/pip install "$WHEEL_URL"
+          ln -sf /tmp/zutil-venv/bin/nanvix-zutil /usr/local/bin/nanvix-zutil
 
       - name: Setup
         env:
