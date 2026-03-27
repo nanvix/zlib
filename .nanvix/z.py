@@ -4,98 +4,190 @@
 """Nanvix build script for zlib.
 
 Usage:
-    ./z setup     # Download Nanvix sysroot
-    ./z build     # Cross-compile libz.a
-    ./z test      # Run test suite (smoke + integration + functional)
-    ./z release   # Package release tarball
-    ./z clean     # Remove build artifacts
+    ./z setup      # Download Nanvix sysroot
+    ./z build      # Cross-compile libz.a
+    ./z test       # Run test suite (smoke + integration + functional)
+    ./z release    # Package release tarball
+    ./z clean      # Remove build artifacts
 """
 
-from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, CFG_TAG, CFG_TOOLCHAIN, EXIT_MISSING_DEP, Sysroot, ZScript, log
+from pathlib import Path
 
-# Makefile variable names (build-system-specific).
-_MAKE_VAR_CONFIG = "CONFIG_NANVIX"
-_MAKE_VAR_HOME = "NANVIX_HOME"
-_MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
-_MAKE_VAR_PLATFORM = "PLATFORM"
-_MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
-_MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
+from nanvix_zutil import ZScript, log, EXIT_BUILD_FAILURE
+
+# zlib source files (matching upstream Makefile).
+_OBJZ_SRCS = [
+    "adler32.c", "crc32.c", "deflate.c", "infback.c", "inffast.c",
+    "inflate.c", "inftrees.c", "trees.c", "zutil.c",
+]
+_OBJG_SRCS = [
+    "compress.c", "uncompr.c", "gzclose.c", "gzlib.c", "gzread.c", "gzwrite.c",
+]
+_ALL_SRCS = _OBJZ_SRCS + _OBJG_SRCS
+_CFLAGS = ["-O2", "-Wall", "-D_GNU_SOURCE", "-msse2", "-mfpmath=sse"]
 
 
 class ZlibBuild(ZScript):
     """Build script for nanvix/zlib."""
 
-    NANVIX_TAG = "latest"
+    def _cc(self) -> str:
+        return f"{self._toolchain()}/bin/i686-nanvix-gcc"
 
-    def _make_args(self, *targets: str) -> list[str]:
-        """Build the common make argument list."""
-        sysroot = self.config.get(CFG_SYSROOT, "")
-        if not sysroot:
-            log.fatal(
-                f"{CFG_SYSROOT} is not set.",
-                code=EXIT_MISSING_DEP,
-                hint="Run `./z setup` first to download the sysroot.",
-            )
-        toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix")
+    def _ar(self) -> str:
+        return f"{self._toolchain()}/bin/i686-nanvix-ar"
 
-        args = [
-            "make", "-f", "Makefile.nanvix",
-            f"{_MAKE_VAR_CONFIG}=y",
-            f"{_MAKE_VAR_HOME}={sysroot}",
-            f"{_MAKE_VAR_TOOLCHAIN}={toolchain}",
+    def _ranlib(self) -> str:
+        return f"{self._toolchain()}/bin/i686-nanvix-ranlib"
+
+    def _ldflags(self) -> list[str]:
+        sysroot = self._sysroot()
+        return [f"-T{sysroot}/lib/user.ld", "-static", "-Wl,-z,noexecstack"]
+
+    def _nanvix_libs(self) -> list[str]:
+        sysroot = self._sysroot()
+        tc = self._toolchain()
+        return [
+            "-Wl,--start-group",
+            f"{sysroot}/lib/libposix.a",
+            f"{tc}/i686-nanvix/lib/libc.a",
+            f"{tc}/i686-nanvix/lib/libm.a",
+            "-Wl,--end-group",
         ]
 
-        args.extend([
-            f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
-            f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
-            f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
-        ])
-
-        args.extend(targets)
-        return args
-
-    def setup(self) -> None:
-        """Download the Nanvix sysroot."""
-        tag = self.config.get(CFG_TAG, self.NANVIX_TAG)
-        if not tag:
-            log.fatal(f"{CFG_TAG} is not set.", code=EXIT_MISSING_DEP)
-
-        sysroot = Sysroot.download(
-            machine=self.config.machine,
-            deployment_mode=self.config.deployment_mode,
-            memory_size=self.config.memory_size,
-            tag=tag,
-            gh_token=self.config.get(CFG_GH_TOKEN),
-        )
-        sysroot.verify(self.sysroot_required_files())
-        self.config.set(CFG_SYSROOT, str(sysroot.path))
-        self.config.save()
+    # ------------------------------------------------------------------
+    # Lifecycle hooks
+    # ------------------------------------------------------------------
 
     def build(self) -> None:
         """Cross-compile libz.a for Nanvix."""
-        self.run(*self._make_args("all"), cwd=self.repo_root)
+        cc = self._cc()
+        # Compile all source files.
+        for src in _ALL_SRCS:
+            obj = src.replace(".c", ".o")
+            self.run(cc, *_CFLAGS, "-c", "-o", obj, src)
+        # Archive into static library.
+        objs = [s.replace(".c", ".o") for s in _ALL_SRCS]
+        self.run(self._ar(), "rc", "libz.a", *objs)
+        self.run(self._ranlib(), "libz.a")
+        log.success("Built libz.a")
 
     def test(self) -> None:
         """Run the zlib test suite.
 
         Without targets, runs the full suite (smoke + integration + functional).
-        With targets (e.g. ``./z test -- test-smoke test-integration``), passes
-        them directly to the Makefile.
+        Pass targets after ``--`` to select specific levels::
+
+            ./z test -- smoke integration
         """
-        targets = self.targets if self.targets else ["test"]
-        self.run(*self._make_args(*targets), cwd=self.repo_root)
+        targets = self.targets if self.targets else ["smoke", "integration", "functional"]
+        if "smoke" in targets or "test-smoke" in targets:
+            self._test_smoke()
+        if "integration" in targets or "test-integration" in targets:
+            self._test_integration()
+        if "functional" in targets or "test-functional" in targets:
+            self._test_functional()
+        log.success("All zlib tests PASSED")
 
     def release(self) -> None:
-        """Package the zlib release tarball and verify it."""
-        self.run(*self._make_args("package"), cwd=self.repo_root)
-        self.run(*self._make_args("verify-package"), cwd=self.repo_root)
+        """Package the zlib release tarball."""
+        machine = self.config.machine
+        mode = self.config.deployment_mode
+        mem = self.config.memory_size
+        name = f"zlib-{machine}-{mode}-{mem}"
+        dist = self.repo_root / "dist" / name
+        # Create package layout.
+        (dist / "sysroot" / "lib").mkdir(parents=True, exist_ok=True)
+        (dist / "sysroot" / "include").mkdir(parents=True, exist_ok=True)
+        (dist / "sysroot" / "bin").mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(self.repo_root / "libz.a", dist / "sysroot" / "lib" / "libz.a")
+        shutil.copy2(self.repo_root / "zlib.h", dist / "sysroot" / "include" / "zlib.h")
+        shutil.copy2(self.repo_root / "zconf.h", dist / "sysroot" / "include" / "zconf.h")
+        for prog in ["example.elf", "minigzip.elf"]:
+            src = self.repo_root / prog
+            if src.exists():
+                shutil.copy2(src, dist / "sysroot" / "bin" / prog)
+        # Create tarball.
+        tarball = self.repo_root / "dist" / f"{name}.tar.bz2"
+        self.run("tar", "-cjf", str(tarball), "-C", str(dist), "sysroot", docker=False)
+        # Verify.
+        self.run("tar", "tjf", str(tarball), docker=False)
+        log.success(f"Package: {tarball}")
 
     def clean(self) -> None:
         """Remove build artifacts."""
-        self.run(
-            "make", "-f", "Makefile.nanvix", "clean",
-            cwd=self.repo_root,
+        patterns = ["*.o", "*.a", "*.elf"]
+        for pattern in patterns:
+            for f in self.repo_root.glob(pattern):
+                f.unlink()
+        for f in (self.repo_root / "test").glob("*.o"):
+            f.unlink()
+        dist = self.repo_root / "dist"
+        if dist.exists():
+            import shutil
+            shutil.rmtree(dist)
+        log.success("Cleaned build artifacts")
+
+    # ------------------------------------------------------------------
+    # Test helpers
+    # ------------------------------------------------------------------
+
+    def _test_smoke(self) -> None:
+        log.info("=== zlib smoke tests ===")
+        libz = self.repo_root / "libz.a"
+        if not libz.exists():
+            log.fatal("libz.a not found", code=EXIT_BUILD_FAILURE)
+        if libz.stat().st_size < 1000:
+            log.fatal("libz.a too small", code=EXIT_BUILD_FAILURE)
+        for hdr in ["zlib.h", "zconf.h"]:
+            if not (self.repo_root / hdr).exists():
+                log.fatal(f"{hdr} not found", code=EXIT_BUILD_FAILURE)
+        log.success("PASS: zlib smoke tests")
+
+    def _test_integration(self) -> None:
+        log.info("=== zlib integration tests ===")
+        cc = self._cc()
+        # Build test programs.
+        for prog in ["example", "minigzip"]:
+            self.run(cc, *_CFLAGS, "-I.", "-c", "-o", f"test/{prog}.o", f"test/{prog}.c")
+            self.run(
+                cc, *_CFLAGS, *self._ldflags(),
+                "-o", f"{prog}.elf", f"test/{prog}.o",
+                "-L.", "-lz", *self._nanvix_libs(),
+            )
+        # Verify binaries exist.
+        for prog in ["example.elf", "minigzip.elf"]:
+            if not (self.repo_root / prog).exists():
+                log.fatal(f"{prog} not built", code=EXIT_BUILD_FAILURE)
+        log.success("PASS: zlib integration tests")
+
+    def _test_functional(self) -> None:
+        log.info("=== zlib functional tests ===")
+        sysroot = self._sysroot()
+        binary = self.translate_path(
+            (self.repo_root / "example.elf").resolve()
         )
+        if self.config.deployment_mode == "standalone":
+            # Standalone mode: use ramfs.
+            workspace = self.translate_path(self.repo_root.resolve())
+            self.run(
+                "sh", "-c",
+                f"mkdir -p /tmp/nanvix-ramfs && "
+                f"cp {workspace}/example.elf /tmp/nanvix-ramfs/ && "
+                f"{sysroot}/bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && "
+                f"timeout --foreground 120 {sysroot}/bin/nanvixd.elf "
+                f"-bin-dir {sysroot}/bin -ramfs /tmp/rootfs.img "
+                f"-- ./example.elf /tmp/zlib_test",
+                kvm=True,
+            )
+        else:
+            self.run(
+                "timeout", "--foreground", "120",
+                f"{sysroot}/bin/nanvixd.elf",
+                "--", str(binary), "/tmp/zlib_test",
+                kvm=True,
+            )
+        log.success("PASS: zlib functional tests")
 
 
 if __name__ == "__main__":
