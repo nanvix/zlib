@@ -46,3 +46,4 @@ example.elf
 .nanvix/buildroot/
 .nanvix/env.json
 dist/
+__pycache__/
