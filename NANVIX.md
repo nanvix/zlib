@@ -12,7 +12,7 @@ This document describes the port of [zlib](https://zlib.net/) compression librar
 |----------|-------|
 | **Base Version** | zlib 1.3.1 |
 | **Target Platform** | Nanvix (i686) |
-| **Build System** | `./z` (ZScript) |
+| **Build System** | `./z` (ZScript) → `Makefile.nanvix` |
 
 **What's included:**
 - ✅ Cross-compilation support for Nanvix

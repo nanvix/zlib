@@ -1,0 +1,276 @@
+# Makefile.nanvix - zlib cross-compilation for Nanvix
+#
+# Copyright(c) The Maintainers of Nanvix.
+# Licensed under the MIT License.
+#
+# Targets:
+#   all              Build static library
+#   test-smoke       Verify build artifacts (no runtime needed)
+#   test-integration Build/link test programs
+#   test-functional  Run tests on nanvixd.elf (requires KVM)
+#   test             Run all test levels
+#   package          Create portable release tarball in dist/
+#   install          Install to PREFIX
+#   clean            Remove build artifacts
+
+# ===========================================================================
+# Toolchain Detection
+# ===========================================================================
+
+NANVIX_DOCKER_IMAGE ?= nanvix/toolchain:latest-minimal
+
+ifdef CONFIG_NANVIX
+  NANVIX_TOOLCHAIN ?= /opt/nanvix
+  NANVIX_HOME ?= $(HOME)/nanvix
+
+  ifndef CONFIG_NANVIX_DOCKER
+    ifeq ($(wildcard $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc),)
+      DOCKER_AVAILABLE := $(shell command -v docker 2>/dev/null)
+      ifdef DOCKER_AVAILABLE
+        DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
+        ifdef DOCKER_IMAGE_EXISTS
+          CONFIG_NANVIX_DOCKER := y
+          $(info [nanvix] Using Docker (native toolchain not found at $(NANVIX_TOOLCHAIN)))
+        else
+          $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
+        endif
+      else
+        $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN) and Docker not available)
+      endif
+    endif
+  else
+    DOCKER_AVAILABLE := $(shell command -v docker 2>/dev/null)
+    ifndef DOCKER_AVAILABLE
+      $(error CONFIG_NANVIX_DOCKER=y but Docker is not installed)
+    endif
+    DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
+    ifndef DOCKER_IMAGE_EXISTS
+      $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
+    endif
+    $(info [nanvix] Using Docker (explicitly requested))
+  endif
+
+  EXE = .elf
+  SYSROOT_PATH := $(abspath $(NANVIX_HOME))
+
+  ifdef CONFIG_NANVIX_DOCKER
+    DOCKER_TOOLCHAIN_PATH := /opt/nanvix
+    DOCKER_SYSROOT_PATH := /mnt/sysroot
+    DOCKER_WORKSPACE_PATH := /mnt/workspace
+    DOCKER_UID := $(shell id -u)
+    DOCKER_GID := $(shell id -g)
+    DOCKER_RUN := docker run --rm --user $(DOCKER_UID):$(DOCKER_GID) \
+      -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
+      -v $(SYSROOT_PATH):$(DOCKER_SYSROOT_PATH):ro \
+      -w $(DOCKER_WORKSPACE_PATH) \
+      -e HOME=/tmp \
+      $(NANVIX_DOCKER_IMAGE)
+    DOCKER_KVM_GID := $(shell stat -c '%g' /dev/kvm 2>/dev/null || echo 0)
+    DOCKER_RUN_FUNCTIONAL := docker run --rm --device /dev/kvm \
+      --user $(DOCKER_UID):$(DOCKER_GID) --group-add $(DOCKER_KVM_GID) \
+      -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
+      -v $(SYSROOT_PATH):$(DOCKER_SYSROOT_PATH) \
+      -w $(DOCKER_SYSROOT_PATH) \
+      -e HOME=/tmp \
+      -e USER=$(shell whoami) \
+      $(NANVIX_DOCKER_IMAGE)
+    CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
+    AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
+    RANLIB := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ranlib
+    NANVIX_LDFLAGS := -T$(DOCKER_SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack
+    NANVIX_LIBS := -Wl,--start-group \
+      $(DOCKER_SYSROOT_PATH)/lib/libposix.a \
+      $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libc.a \
+      $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libm.a \
+      -Wl,--end-group
+  else
+    CC := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc
+    AR := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ar
+    RANLIB := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ranlib
+    NANVIX_LDFLAGS := -T$(SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack
+    NANVIX_LIBS := -Wl,--start-group \
+      $(SYSROOT_PATH)/lib/libposix.a \
+      $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libc.a \
+      $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libm.a \
+      -Wl,--end-group
+  endif
+else
+  ifneq ($(MAKECMDGOALS),clean)
+    $(error CONFIG_NANVIX must be set to 'y'. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/sysroot)
+  endif
+  EXE = .elf
+endif
+
+PREFIX ?= $(SYSROOT_PATH)
+PLATFORM ?= unknown
+PROCESS_MODE ?= unknown
+MEMORY_SIZE ?= unknown
+
+# ===========================================================================
+# Build Configuration
+# ===========================================================================
+
+CFLAGS = -O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse
+ARFLAGS = rc
+
+STATICLIB = libz.a
+OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
+OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
+OBJS = $(OBJZ) $(OBJG)
+TEST_PROGS = example$(EXE) minigzip$(EXE)
+
+# ===========================================================================
+# Build Targets
+# ===========================================================================
+
+all: $(STATICLIB)
+
+$(STATICLIB): $(OBJS)
+	$(AR) $(ARFLAGS) $@ $(OBJS)
+	-@ ($(RANLIB) $@ || true) >/dev/null 2>&1
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+test/example.o: test/example.c zlib.h zconf.h
+	$(CC) $(CFLAGS) -I. -c -o $@ $<
+
+test/minigzip.o: test/minigzip.c zlib.h zconf.h
+	$(CC) $(CFLAGS) -I. -c -o $@ $<
+
+example$(EXE): test/example.o $(STATICLIB)
+	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ test/example.o -L. -lz $(NANVIX_LIBS)
+
+minigzip$(EXE): test/minigzip.o $(STATICLIB)
+	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ test/minigzip.o -L. -lz $(NANVIX_LIBS)
+
+# Source dependencies
+adler32.o: adler32.c zutil.h zlib.h zconf.h
+crc32.o: crc32.c zutil.h zlib.h zconf.h crc32.h
+deflate.o: deflate.c deflate.h zutil.h zlib.h zconf.h
+gzclose.o: gzclose.c zlib.h zconf.h gzguts.h
+gzlib.o: gzlib.c zlib.h zconf.h gzguts.h
+gzread.o: gzread.c zlib.h zconf.h gzguts.h
+gzwrite.o: gzwrite.c zlib.h zconf.h gzguts.h
+infback.o: infback.c zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h inffixed.h
+inffast.o: inffast.c zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h
+inflate.o: inflate.c zutil.h zlib.h zconf.h inftrees.h inflate.h inffast.h inffixed.h
+inftrees.o: inftrees.c zutil.h zlib.h zconf.h inftrees.h
+trees.o: trees.c deflate.h zutil.h zlib.h zconf.h trees.h
+uncompr.o: uncompr.c zlib.h zconf.h
+compress.o: compress.c zlib.h zconf.h
+zutil.o: zutil.c zutil.h zlib.h zconf.h
+
+# ===========================================================================
+# Test Targets
+# ===========================================================================
+
+test-smoke: $(STATICLIB)
+	@echo "=== zlib smoke tests ==="
+	@test -f $(STATICLIB) || { echo "  FAIL: $(STATICLIB) not found"; exit 1; }
+	@size=$$(wc -c < $(STATICLIB)); \
+	  if [ "$$size" -lt 1000 ]; then echo "  FAIL: $(STATICLIB) too small"; exit 1; fi
+	@test -f zlib.h || { echo "  FAIL: zlib.h not found"; exit 1; }
+	@test -f zconf.h || { echo "  FAIL: zconf.h not found"; exit 1; }
+	@echo "  PASS: zlib smoke tests"
+
+test-integration: $(TEST_PROGS)
+	@echo "=== zlib integration tests ==="
+	@test -f example$(EXE) || { echo "  FAIL: example$(EXE) not built"; exit 1; }
+	@test -f minigzip$(EXE) || { echo "  FAIL: minigzip$(EXE) not built"; exit 1; }
+	@echo "  OK: example$(EXE) ($$(wc -c < example$(EXE)) bytes)"
+	@echo "  OK: minigzip$(EXE) ($$(wc -c < minigzip$(EXE)) bytes)"
+	@echo "  PASS: zlib integration tests"
+
+test-functional: test-integration
+	@echo "=== zlib functional tests ==="
+ifeq ($(PROCESS_MODE),standalone)
+ifdef CONFIG_NANVIX_DOCKER
+	@echo "  Running example$(EXE) via nanvixd.elf standalone (Docker)..."
+	$(DOCKER_RUN_FUNCTIONAL) sh -c '\
+	  mkdir -p /tmp/nanvix-ramfs && \
+	  cp $(DOCKER_WORKSPACE_PATH)/example$(EXE) /tmp/nanvix-ramfs/ && \
+	  ./bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && \
+	  timeout --foreground 120 ./bin/nanvixd.elf \
+	    -bin-dir ./bin -ramfs /tmp/rootfs.img \
+	    -- ./example$(EXE) /tmp/zlib_test'
+	@echo "  PASS: example test standalone (exit code 0)"
+else
+	@echo "  Running example$(EXE) via nanvixd.elf standalone..."
+	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs
+	@cp $(abspath example$(EXE)) /tmp/nanvix-ramfs/
+	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
+	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
+	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
+	  -- ./example$(EXE) /tmp/zlib_test
+	@rm -rf /tmp/nanvix-ramfs /tmp/rootfs.img
+	@echo "  PASS: example test standalone (exit code 0)"
+endif
+else
+ifdef CONFIG_NANVIX_DOCKER
+	@echo "  Running example$(EXE) via nanvixd.elf (Docker)..."
+	$(DOCKER_RUN_FUNCTIONAL) sh -c \
+	  'timeout --foreground 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/example$(EXE) /tmp/zlib_test'
+	@echo "  PASS: example test (exit code 0)"
+else
+	@echo "  Running example$(EXE) via nanvixd.elf..."
+	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath example$(EXE)) /tmp/zlib_test
+	@echo "  PASS: example test (exit code 0)"
+endif
+endif
+	@echo "  PASS: zlib functional tests"
+
+test: test-smoke test-integration test-functional
+	@echo "=== All zlib tests PASSED ==="
+
+# ===========================================================================
+# Package Target
+# ===========================================================================
+
+package: all
+	@echo "=== Packaging zlib release ==="
+	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
+	rm -rf dist/$(ARTIFACT_NAME)
+	mkdir -p dist/$(ARTIFACT_NAME)/sysroot/lib dist/$(ARTIFACT_NAME)/sysroot/include dist/$(ARTIFACT_NAME)/sysroot/bin
+	cp -f $(STATICLIB) dist/$(ARTIFACT_NAME)/sysroot/lib/
+	cp -f zlib.h zconf.h dist/$(ARTIFACT_NAME)/sysroot/include/
+	-cp -f $(TEST_PROGS) dist/$(ARTIFACT_NAME)/sysroot/bin/ 2>/dev/null || true
+	tar -cjf dist/$(ARTIFACT_NAME).tar.bz2 -C dist/$(ARTIFACT_NAME) sysroot
+	@echo "  Package: dist/$(ARTIFACT_NAME).tar.bz2"
+	@echo "  Contents:"
+	@tar tjf dist/$(ARTIFACT_NAME).tar.bz2 | head -20
+
+# ===========================================================================
+# Verify Package
+# ===========================================================================
+
+verify-package:
+	@echo "=== Verifying zlib package ==="
+	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
+	@TARBALL="dist/$(ARTIFACT_NAME).tar.bz2"; \
+	if [ ! -f "$$TARBALL" ]; then \
+	  echo "FAIL: Package tarball not found: $$TARBALL"; exit 1; \
+	fi; \
+	echo "Package contents:"; \
+	tar tjf "$$TARBALL"; \
+	if ! tar tjf "$$TARBALL" | grep -q 'sysroot/lib/'; then \
+	  echo "FAIL: Package missing sysroot/lib/ entries"; exit 1; \
+	fi; \
+	echo "  PASS: zlib package verification"
+
+# ===========================================================================
+# Install / Clean
+# ===========================================================================
+
+install: $(STATICLIB)
+	mkdir -p "$(DESTDIR)$(PREFIX)/lib"
+	mkdir -p "$(DESTDIR)$(PREFIX)/include"
+	install -m644 $(STATICLIB) "$(DESTDIR)$(PREFIX)/lib/"
+	install -m644 zlib.h zconf.h "$(DESTDIR)$(PREFIX)/include/"
+
+clean:
+	rm -f *.o test/*.o *~ $(STATICLIB) $(TEST_PROGS)
+	rm -f *.a *.elf
+	rm -rf dist/
+
+.PHONY: all clean test test-smoke test-integration test-functional package verify-package install

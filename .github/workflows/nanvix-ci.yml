@@ -110,7 +110,7 @@ jobs:
 
       - name: Test (standalone — smoke + integration only)
         if: matrix.process-mode == 'standalone'
-        run: ./z test -- smoke integration
+        run: ./z test -- test-smoke test-integration
 
       - name: Release
         if: success()
