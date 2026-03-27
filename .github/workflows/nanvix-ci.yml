@@ -44,8 +44,8 @@ jobs:
           if [[ -n "$WHEEL_HASH" ]]; then
             pip install "$WHEEL_URL" --require-hashes --hash="$WHEEL_HASH"
           else
-            echo "::warning::No sha256 hash found in release notes — installing without verification"
-            pip install "$WHEEL_URL"
+            echo "::error::No sha256 hash found in release notes for nanvix-zutil — cannot verify wheel integrity"
+            exit 1
           fi
 
       - name: Resolve lockfile and extract release info

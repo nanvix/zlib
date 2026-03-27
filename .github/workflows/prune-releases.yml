@@ -2,10 +2,9 @@
 # Licensed under the MIT License.
 
 # ==========================================================================
-# Release Retention Workflow Template
+# Release Retention Workflow
 #
-# Copy this file to .github/workflows/prune-releases.yml in your consumer
-# repo. Deletes CI-generated releases older than 90 days.
+# Deletes CI-generated releases older than 90 days.
 #
 # Releases with tags NOT matching the CI pattern
 # ({version}-nanvix-{nanvix_version}) are preserved — use non-matching

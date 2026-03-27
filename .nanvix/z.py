@@ -169,14 +169,16 @@ class ZlibBuild(ZScript):
         )
         if self.config.deployment_mode == "standalone":
             # Standalone mode: use ramfs.
-            workspace = self.translate_path(self.repo_root.resolve())
+            import shlex
+            workspace = shlex.quote(str(self.translate_path(self.repo_root.resolve())))
+            sr = shlex.quote(str(sysroot))
             self.run(
                 "sh", "-c",
                 f"mkdir -p /tmp/nanvix-ramfs && "
                 f"cp {workspace}/example.elf /tmp/nanvix-ramfs/ && "
-                f"{sysroot}/bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && "
-                f"timeout --foreground 120 {sysroot}/bin/nanvixd.elf "
-                f"-bin-dir {sysroot}/bin -ramfs /tmp/rootfs.img "
+                f"{sr}/bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && "
+                f"timeout --foreground 120 {sr}/bin/nanvixd.elf "
+                f"-bin-dir {sr}/bin -ramfs /tmp/rootfs.img "
                 f"-- ./example.elf /tmp/zlib_test",
                 kvm=True,
             )
