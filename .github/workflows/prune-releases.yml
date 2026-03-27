@@ -23,7 +23,7 @@ on:
 jobs:
   prune:
     name: Prune Releases Older Than 90 Days
-    # CUSTOMIZE: replace OWNER/REPO with your repository's full name
+    # Guard: only run in nanvix/zlib to prevent accidental reuse in forks.
     if: github.repository == 'nanvix/zlib'
     runs-on: ubuntu-24.04
     permissions:
@@ -42,9 +42,10 @@ jobs:
             const cutoff = new Date();
             cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
 
-            // Match CI-generated tags: {version}-nanvix-{nanvix_version}
-            // e.g. 0.1.0-nanvix-0.12.267
-            const ciTagRe = /^\d+\.\d+\.\d+-nanvix-\d+\.\d+\.\d+$/;
+            // Match CI-generated tags:
+            //   semver:    {version}-nanvix-{nanvix_version}  e.g. 1.3.1-nanvix-0.12.267
+            //   commitish: {version}-nanvix-{sha7}            e.g. 1.3.1-nanvix-abc1234
+            const ciTagRe = /^\d+\.\d+\.\d+-nanvix-(\d+\.\d+\.\d+|[0-9a-f]{7})$/;
 
             const releases = await github.paginate(
               github.rest.repos.listReleases,
