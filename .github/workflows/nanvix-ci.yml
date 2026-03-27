@@ -37,8 +37,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
-          WHEEL_URL=$(gh api repos/nanvix/zutils/releases/latest \
-            --jq '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
+          WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/nanvix/zutils/releases/latest \
+            | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
           pip install "$WHEEL_URL"
 
       - name: Resolve lockfile and extract release info
@@ -75,8 +76,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
-          WHEEL_URL=$(gh api repos/nanvix/zutils/releases/latest \
-            --jq '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
+          WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/nanvix/zutils/releases/latest \
+            | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
           pip install "$WHEEL_URL"
 
       - name: Setup
@@ -158,8 +160,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          WHEEL_URL=$(gh api repos/nanvix/zutils/releases/latest \
-            --jq '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
+          WHEEL_URL=$(curl -fsSL -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/nanvix/zutils/releases/latest \
+            | python3 -c "import json,sys; assets=json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.whl')))")
           pip install "$WHEEL_URL"
           nanvix-zutil resolve > /dev/null
           nanvix-zutil lock --shallow
