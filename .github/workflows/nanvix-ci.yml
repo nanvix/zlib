@@ -127,8 +127,9 @@ jobs:
             echo "::error::No sysroot artifact for ${{ matrix.platform }}/${{ matrix.process-mode }}/${{ matrix.memory }}"
             exit 1
           fi
-          mkdir -p nanvix-artifacts/extracted
-          tar -xjf "$ARTIFACT" -C nanvix-artifacts/extracted
+          # Pre-place sysroot where the base class auto-detects it.
+          mkdir -p .nanvix/sysroot
+          tar -xjf "$ARTIFACT" -C .nanvix/sysroot
 
       - name: Setup
         env:
@@ -209,7 +210,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          pip install nanvix-zutil || true
           ./z lock --shallow
           cp .nanvix/nanvix.lock release-assets/nanvix.lock
 
