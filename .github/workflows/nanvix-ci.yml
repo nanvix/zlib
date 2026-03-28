@@ -213,56 +213,81 @@ jobs:
             -f "client_payload[zlib_tag]=${RELEASE_TAG}" || echo "::warning::Failed to trigger sqlite workflow"
 
   report-failure:
-    needs: [build, release]
+    needs: [get-nanvix-info, build, release]
     if: >-
       ${{ always() &&
           (github.event_name == 'push' ||
            github.event_name == 'schedule' ||
            github.event_name == 'repository_dispatch') &&
-          (needs.build.result == 'failure' ||
-           needs.release.result == 'failure') }}
+          (needs.build.result == 'failure' || needs.release.result == 'failure') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Report failure issue
+      - name: Report build failures
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const title = `CI failure`;
-            const body = [
-              `CI workflow failed.`,
-              `- Trigger: ${context.eventName}`,
-              `- Run: [#${context.runNumber}](${runUrl})`,
-              `- SHA: ${context.sha}`,
-              '',
-              'Please investigate and take corrective action.'
-            ].join('\n');
+            const runId = context.runId;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${runId}`;
 
-            const { data: search } = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${owner}/${repo} is:issue is:open in:title "CI failure"`
-            });
-            const existing = search.items.find(i => i.title === title);
+            // List all jobs for this workflow run.
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              { owner, repo, run_id: runId },
+              (res) => res.data.jobs
+            );
 
-            if (existing) {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: existing.number, body
+            // Identify failed build jobs by their matrix-generated name.
+            const buildPattern = /^(hyperlight|microvm)-(multi-process|single-process|standalone)-(\S+)$/;
+            const failedJobs = jobs.filter(
+              (j) =>
+                ['failure', 'timed_out', 'cancelled', 'action_required'].includes(j.conclusion) &&
+                buildPattern.test(j.name)
+            );
+
+            for (const job of failedJobs) {
+              const [, platform, processMode, memory] = job.name.match(buildPattern);
+              const title = `CI failure: ${platform}-${processMode}-${memory}`;
+              const assignees = platform === 'microvm'
+                ? ['ppenna']
+                : ['ppenna', 'danbugs'];
+
+              const occurrence = [
+                `### Failure on ${new Date().toISOString().slice(0, 10)}`,
+                `- **Trigger:** \`${context.eventName}\``,
+                `- **Run:** [#${context.runNumber}](${runUrl})`,
+                `- **Job:** [${job.name}](${job.html_url})`,
+                `- **SHA:** \`${context.sha}\``,
+                '',
+                'Please investigate and take corrective action.',
+              ].join('\n');
+
+              // Search for an existing open issue for this build configuration.
+              const { data: search } = await github.rest.search.issuesAndPullRequests({
+                q: `repo:${owner}/${repo} is:issue is:open in:title "${title}"`,
               });
+              const existing = search.items.find((i) => i.title === title);
 
-              // Reconcile assignees: add any missing desired assignees.
-              const currentAssignees = existing.assignees.map(a => a.login);
-              const desired = ['ppenna', 'danbugs'];
-              const missing = desired.filter(a => !currentAssignees.includes(a));
-              if (missing.length > 0) {
-                await github.rest.issues.addAssignees({
-                  owner, repo, issue_number: existing.number, assignees: missing
+              if (existing) {
+                // Amend the issue body with the new failure occurrence.
+                const newBody = (existing.body ?? '') + '\n\n---\n\n' + occurrence;
+                await github.rest.issues.update({
+                  owner, repo, issue_number: existing.number, body: newBody,
+                });
+
+                // Reconcile assignees: add any missing desired assignees.
+                const currentAssignees = existing.assignees.map((a) => a.login);
+                const missing = assignees.filter((a) => !currentAssignees.includes(a));
+                if (missing.length > 0) {
+                  await github.rest.issues.addAssignees({
+                    owner, repo, issue_number: existing.number, assignees: missing,
+                  });
+                }
+              } else {
+                await github.rest.issues.create({
+                  owner, repo, title, body: occurrence, assignees,
                 });
               }
-            } else {
-              await github.rest.issues.create({
-                owner, repo, title, body,
-                assignees: ['ppenna', 'danbugs']
-              });
             }
