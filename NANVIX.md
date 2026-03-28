@@ -40,6 +40,26 @@ This document describes the port of [zlib](https://zlib.net/) compression librar
 For experienced users who want to build quickly:
 
 ```bash
+# 1. Install nanvix-zutil (requires gh CLI: https://cli.github.com)
+#    Using a venv is recommended on modern Linux distros (PEP 668).
+python3 -m venv .venv && source .venv/bin/activate
+WHEEL_URL=$(gh api repos/nanvix/zutils/releases/latest \
+  --jq '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
+pip install "$WHEEL_URL"
+
+# 2. Setup (downloads Nanvix sysroot automatically)
+./z setup
+
+# 3. Build
+./z build
+
+# 4. Run tests
+./z test
+```
+
+Or build directly with Make (advanced):
+
+```bash
 # 1. Pull the Docker image
 docker pull nanvix/toolchain:latest-minimal
 
@@ -61,12 +81,13 @@ Continue reading for detailed instructions.
 
 ## Prerequisites
 
-You need two components to build zlib for Nanvix:
+You need the following to build zlib for Nanvix:
 
-| Component | Description | Default Location |
-|-----------|-------------|------------------|
-| **Nanvix Toolchain** | i686-nanvix cross-compiler | `$HOME/toolchain` |
-| **Nanvix Sysroot** | System libraries and linker script | `$HOME/nanvix` |
+| Component | Description | Install |
+|-----------|-------------|---------|
+| **nanvix-zutil** | Build orchestration CLI | `pip install` from [GitHub Releases](https://github.com/nanvix/zutils/releases) |
+| **Nanvix Toolchain** | i686-nanvix cross-compiler | Docker image or native install |
+| **Nanvix Sysroot** | System libraries and linker script | `nanvix-zutil setup` |
 
 ### Available Platform Configurations
 
@@ -74,8 +95,10 @@ You need two components to build zlib for Nanvix:
 |----------|--------------|------------------|
 | hyperlight | multi-process | `hyperlight.*multi-process` |
 | hyperlight | single-process | `hyperlight.*single-process` |
-| microvm | single-process | `microvm.*single-process` |
+| hyperlight | standalone | `hyperlight.*standalone` |
 | microvm | multi-process | `microvm.*multi-process` |
+| microvm | single-process | `microvm.*single-process` |
+| microvm | standalone | `microvm.*standalone` |
 
 ### Downloading Nanvix
 
@@ -89,7 +112,21 @@ The script downloads all release artifacts. Extract the one matching your target
 
 ## Building
 
-### Using Docker (Recommended)
+### Using nanvix-zutil (Recommended)
+
+```bash
+# Install nanvix-zutil (use a venv on modern Linux distros)
+python3 -m venv .venv && source .venv/bin/activate
+WHEEL_URL=$(gh api repos/nanvix/zutils/releases/latest \
+  --jq '.assets[] | select(.name | endswith(".whl")) | .browser_download_url')
+pip install "$WHEEL_URL"
+
+# Setup sysroot and build
+./z setup
+./z build
+```
+
+### Using Docker (Direct Make)
 
 The Makefile supports automatic Docker fallback when the native toolchain is not available:
 
@@ -137,6 +174,15 @@ After a successful build, you will have:
 
 ```bash
 # Run all tests
+./z test
+
+# Or run specific test targets
+./z test -- test-smoke test-integration
+```
+
+Alternatively, invoke Make directly:
+
+```bash
 make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix test
 ```
 
@@ -178,6 +224,11 @@ The following changes were made to support Nanvix.
 |------|---------|
 | `Makefile.nanvix` | Standalone Makefile for Nanvix cross-compilation |
 | `NANVIX.md` | This documentation file |
+| `z` | Unified entry point (delegates to `z.sh` or `z.ps1`) |
+| `z.sh` | Bash wrapper that delegates to `nanvix-zutil` CLI |
+| `z.ps1` | PowerShell wrapper that delegates to `nanvix-zutil` CLI |
+| `.nanvix/z.py` | Build script (extends `nanvix-zutil` `ZScript`) |
+| `.nanvix/nanvix.toml` | Package manifest for dependency resolution |
 | `.github/workflows/nanvix-ci.yml` | CI workflow for automated builds |
 
 ### Source Code Changes
@@ -199,7 +250,16 @@ The following changes were made to support Nanvix.
 
 ## CI/CD
 
-The GitHub Actions workflow at `.github/workflows/nanvix-ci.yml` automates building and testing on every change.
+The GitHub Actions workflow at `.github/workflows/nanvix-ci.yml` automates building and testing on every change. It uses the `nanvix-zutil` CLI (installed from the wheel in GitHub Releases) for all build orchestration.
+
+### Workflow Structure
+
+| Job | Description |
+|-----|-------------|
+| `get-nanvix-info` | Resolves the manifest and extracts Nanvix version metadata |
+| `build` | Cross-compiles, tests, and packages across the build matrix |
+| `release` | Creates a GitHub release with build artifacts and lockfile |
+| `report-failure` | Opens/updates a GitHub issue on CI failures |
 
 ### Trigger Events
 
@@ -209,18 +269,20 @@ The GitHub Actions workflow at `.github/workflows/nanvix-ci.yml` automates build
 | PR to `nanvix/**` | Pull requests targeting Nanvix branches |
 | Daily schedule | Runs at midnight UTC |
 | Manual dispatch | Can be triggered manually |
-| Repository dispatch | Triggered by `nanvix-release` events |
+| Repository dispatch | Triggered by `nanvix-minor-release` or `nanvix-major-release` events |
 
 ### Build Matrix
 
-The CI runs on 4 different platform/process-mode configurations:
+The CI runs on 6 different platform/process-mode configurations:
 
-| Platform | Process Mode | Runner |
-|----------|--------------|--------|
-| hyperlight | multi-process | `self-hosted-hyperlight-multi` |
-| hyperlight | single-process | `self-hosted-hyperlight-single` |
-| microvm | single-process | `self-hosted-microvm-single` |
-| microvm | multi-process | `self-hosted-microvm-multi` |
+| Platform | Process Mode |
+|----------|--------------|
+| hyperlight | multi-process |
+| hyperlight | single-process |
+| hyperlight | standalone |
+| microvm | multi-process |
+| microvm | single-process |
+| microvm | standalone |
 
 All configurations run in parallel with `fail-fast: false`, ensuring that all platforms are tested even if one fails.
 
