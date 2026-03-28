@@ -198,19 +198,6 @@ jobs:
             --latest \
             release-assets/*
 
-      - name: Trigger dependent workflows
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
-        run: |
-          RELEASE_TAG="${{ needs.get-nanvix-info.outputs.package_version }}-nanvix-${{ needs.get-nanvix-info.outputs.nanvix_version }}"
-          echo "Triggering sqlite workflow..."
-          gh api repos/nanvix/sqlite/dispatches \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -f event_type="zlib-release" \
-            -f "client_payload[nanvix_version]=${{ needs.get-nanvix-info.outputs.nanvix_version }}" \
-            -f "client_payload[zlib_tag]=${RELEASE_TAG}" || echo "::warning::Failed to trigger sqlite workflow"
 
   report-failure:
     needs: [get-nanvix-info, build, release]
