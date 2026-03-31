@@ -45,4 +45,5 @@ example.elf
 .nanvix/sysroot/
 .nanvix/buildroot/
 .nanvix/env.json
+.nanvix/nanvix.lock
 dist/
