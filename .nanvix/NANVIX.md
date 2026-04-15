@@ -69,10 +69,10 @@ tar -xjf nanvix-artifacts/*microvm*single*.tar.bz2 -C nanvix-artifacts
 export NANVIX_HOME=$(find nanvix-artifacts -maxdepth 2 -type d -name "bin" -exec dirname {} \; | head -1)
 
 # 3. Build (Docker is used automatically if native toolchain is not found)
-make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME"
+make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME"
 
 # 4. Run tests
-make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" test
+make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" test
 ```
 
 Continue reading for detailed instructions.
@@ -135,7 +135,7 @@ The Makefile supports automatic Docker fallback when the native toolchain is not
 docker pull nanvix/toolchain:latest-minimal
 
 # Build (Docker is used automatically if native toolchain is not found)
-make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix/sysroot-debug
+make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix/sysroot-debug
 ```
 
 > **Note:** The sysroot (`NANVIX_HOME`) must contain `lib/libposix.a` and `lib/user.ld` from a Nanvix build.
@@ -151,7 +151,7 @@ make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix/sysroot-debu
 ```bash
 export NANVIX_TOOLCHAIN=/path/to/toolchain  # Contains: bin/i686-nanvix-gcc
 export NANVIX_HOME=/path/to/nanvix          # Contains: lib/user.ld, lib/libposix.a
-make -f Makefile.nanvix CONFIG_NANVIX=y all
+make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y all
 ```
 
 ### Build Outputs
@@ -183,7 +183,7 @@ After a successful build, you will have:
 Alternatively, invoke Make directly:
 
 ```bash
-make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix test
+make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix test
 ```
 
 ### Running Individual Tests
@@ -211,7 +211,7 @@ The following changes were made to support Nanvix.
 
 | Change | Description |
 |--------|-------------|
-| New Makefile | Added `Makefile.nanvix` for Nanvix cross-compilation |
+| New Makefile | Added `.nanvix/Makefile.nanvix` for Nanvix cross-compilation |
 | Cross-compilation | Uses `CONFIG_NANVIX=y` option to enable Nanvix build |
 | Docker support | Automatic Docker fallback when native toolchain not available |
 | Linker flags | Added Nanvix-specific flags (`-T user.ld -static`) |
@@ -222,8 +222,8 @@ The following changes were made to support Nanvix.
 
 | File | Purpose |
 |------|---------|
-| `Makefile.nanvix` | Standalone Makefile for Nanvix cross-compilation |
-| `NANVIX.md` | This documentation file |
+| `.nanvix/Makefile.nanvix` | Standalone Makefile for Nanvix cross-compilation |
+| `.nanvix/NANVIX.md` | This documentation file |
 | `z` | Unified entry point (delegates to `z.sh` or `z.ps1`) |
 | `z.sh` | Bash wrapper that delegates to `nanvix-zutil` CLI |
 | `z.ps1` | PowerShell wrapper that delegates to `nanvix-zutil` CLI |

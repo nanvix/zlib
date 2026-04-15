@@ -37,7 +37,7 @@ class ZlibBuild(ZScript):
         toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix")
 
         args = [
-            "make", "-f", "Makefile.nanvix",
+            "make", "-f", ".nanvix/Makefile.nanvix",
             f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={sysroot}",
             f"{_MAKE_VAR_TOOLCHAIN}={toolchain}",
@@ -78,7 +78,7 @@ class ZlibBuild(ZScript):
     def clean(self) -> None:
         """Remove build artifacts."""
         self.run(
-            "make", "-f", "Makefile.nanvix", "clean",
+            "make", "-f", ".nanvix/Makefile.nanvix", "clean",
             cwd=self.repo_root,
         )
 
