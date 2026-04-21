@@ -93,7 +93,10 @@ class ZlibBuild(ZScript):
             log.fatal("mkramfs.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
 
         build_dir = self.repo_root / "build"
-        test_binaries = sorted(build_dir.glob("*.elf")) if build_dir.is_dir() else []
+        # Only run self-contained test executables; skip CLI tools like minigzip.
+        _TEST_ALLOWLIST = {"example.elf"}
+        all_elfs = sorted(build_dir.glob("*.elf")) if build_dir.is_dir() else []
+        test_binaries = [b for b in all_elfs if b.name in _TEST_ALLOWLIST]
 
         if not test_binaries:
             print("No test binaries found in build/ -- smoke test only.")
