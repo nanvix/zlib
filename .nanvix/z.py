@@ -69,7 +69,7 @@ class ZlibBuild(ZScript):
     def test(self) -> None:
         """Run the zlib test suite.
 
-        On Linux, delegates to the Makefile (smoke + integration + functional).
+        On non-Windows, delegates to the Makefile (smoke + integration + functional).
         On Windows, runs test binaries from build/ via nanvixd.exe natively,
         following the same pattern as posix-tests and cpython.
         """
@@ -80,84 +80,62 @@ class ZlibBuild(ZScript):
         self.run(*self._make_args(*targets), cwd=self.repo_root)
 
     def _run_tests_windows(self) -> None:
-        """Run tests natively on Windows using nanvixd.exe.
-
-        Expects test binaries (.elf) in build/ (downloaded from the Linux
-        CI build artifact by the reusable workflow). Runs each test binary
-        in a standalone VM via nanvixd.exe + mkramfs.exe.
-        """
+        """Run tests natively on Windows using nanvixd.exe."""
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:
-            log.fatal(
-                f"{CFG_SYSROOT} is not set.",
-                code=EXIT_MISSING_DEP,
-                hint="Run `./z setup` first.",
-            )
+            log.fatal(f"{CFG_SYSROOT} is not set.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
         sysroot_path = Path(sysroot)
         nanvixd = sysroot_path / "bin" / "nanvixd.exe"
         mkramfs = sysroot_path / "bin" / "mkramfs.exe"
         if not nanvixd.is_file():
-            log.fatal(
-                "nanvixd.exe not found in sysroot.",
-                code=EXIT_MISSING_DEP,
-                hint="Run `./z setup` to download Windows host binaries.",
-            )
+            log.fatal("nanvixd.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
+        if not mkramfs.is_file():
+            log.fatal("mkramfs.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
 
         build_dir = self.repo_root / "build"
         test_binaries = sorted(build_dir.glob("*.elf")) if build_dir.is_dir() else []
 
         if not test_binaries:
-            # No test binaries — smoke test only (verify library was built).
-            print("No test binaries found in build/ — smoke test only.")
-            release_dir = self.repo_root / "dist"
-            tarballs = list(release_dir.glob("*.tar.bz2")) if release_dir.is_dir() else []
-            if tarballs:
-                print(f"OK: release tarball found ({tarballs[0].name})")
-            else:
-                print("OK: no test binaries to run (library-only repo)")
+            print("No test binaries found in build/ -- smoke test only.")
+            print("OK: library-only repo, no functional tests to run on Windows")
             return
 
-        # Run each test binary in a standalone VM.
+        import shutil
         import tempfile
         failed = []
         for binary in test_binaries:
             name = binary.stem
             print(f"RUN  {name}...")
-
-            # Build a minimal ramfs with the test binary.
-            ramfs_dir = Path(tempfile.mkdtemp(prefix=f"nanvix_{name}_"))
-            (ramfs_dir / "tmp").mkdir(exist_ok=True)
-            import shutil
-            shutil.copy2(binary, ramfs_dir / binary.name)
-
-            ramfs_img = ramfs_dir / "rootfs.img"
-            subprocess.run(
-                [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
-                check=True, capture_output=True,
-            )
-
-            try:
-                result = subprocess.run(
-                    [str(nanvixd.resolve()), "-bin-dir", str((sysroot_path / "bin").resolve()),
-                     "-ramfs", str(ramfs_img), "--", str(binary.name)],
-                    stdin=subprocess.DEVNULL,
-                    timeout=120,
-                )
-                if result.returncode != 0:
-                    print(f"FAIL {name} (exit code {result.returncode})")
+            with tempfile.TemporaryDirectory(prefix=f"nanvix_{name}_") as tmpdir:
+                ramfs_dir = Path(tmpdir)
+                (ramfs_dir / "tmp").mkdir(exist_ok=True)
+                shutil.copy2(binary, ramfs_dir / binary.name)
+                # Write ramfs image outside the source dir to avoid self-inclusion.
+                ramfs_img = ramfs_dir.parent / f"rootfs_{name}.img"
+                try:
+                    subprocess.run(
+                        [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
+                        check=True,
+                    )
+                    result = subprocess.run(
+                        [str(nanvixd.resolve()), "-bin-dir", str((sysroot_path / "bin").resolve()),
+                         "-ramfs", str(ramfs_img), "--", f"./{binary.name}"],
+                        stdin=subprocess.DEVNULL, timeout=120,
+                    )
+                    if result.returncode != 0:
+                        print(f"FAIL {name} (exit code {result.returncode})")
+                        failed.append(name)
+                    else:
+                        print(f"OK   {name}")
+                except subprocess.TimeoutExpired:
+                    print(f"FAIL {name} (timeout)")
                     failed.append(name)
-                else:
-                    print(f"OK   {name}")
-            except subprocess.TimeoutExpired:
-                print(f"FAIL {name} (timeout)")
-                failed.append(name)
-            finally:
-                shutil.rmtree(ramfs_dir, ignore_errors=True)
+                finally:
+                    ramfs_img.unlink(missing_ok=True)
 
         if failed:
-            raise RuntimeError(
-                f"{len(failed)} test(s) failed: {' '.join(failed)}"
-            )
+            msg = " ".join(failed)
+            raise RuntimeError(f"{len(failed)} test(s) failed: {msg}")
         print(f"\t\t*** All {len(test_binaries)} tests PASSED ***")
 
     def release(self) -> None:
