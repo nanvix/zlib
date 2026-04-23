@@ -202,7 +202,7 @@ else
 	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
 	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
 	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	  -- ./example$(EXE) /tmp/zlib_test
+	  -- $(abspath example$(EXE)) /tmp/zlib_test
 	@rm -rf /tmp/nanvix-ramfs /tmp/rootfs.img
 	@echo "  PASS: example test standalone (exit code 0)"
 endif
