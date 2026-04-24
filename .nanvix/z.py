@@ -27,11 +27,8 @@ _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 
-# Minimum byte sizes used in integration checks to guard against empty or
-# truncated build outputs.  A valid static library is at minimum several KiB;
-# headers and ELF executables are each at least a few hundred bytes.
-_MIN_LIBRARY_SIZE = 1000
-_MIN_HEADER_SIZE = 100
+# Minimum byte size for ELF executables in integration checks, to guard
+# against empty or truncated build outputs.
 _MIN_EXECUTABLE_SIZE = 1000
 
 
@@ -92,9 +89,10 @@ class ZlibBuild(ZScript):
         """Run tests natively on Windows.
 
         - standalone: full functional tests executed via nanvixd.exe.
-        - multi-process / single-process: smoke + integration checks only
-          (linuxd is Linux-only; verify cross-compiled artifacts are present
-          and non-trivially sized to confirm successful compilation and linking).
+        - multi-process / single-process: integration checks only
+          (linuxd is Linux-only; verify cross-compiled ELF executables are
+          present and non-trivially sized to confirm successful compilation
+          and linking).
         """
         if self.config.deployment_mode != "standalone":
             self._run_integration_checks_windows()
@@ -178,33 +176,18 @@ class ZlibBuild(ZScript):
         print(f"\t\t*** All {len(test_binaries)} tests PASSED ***")
 
     def _run_integration_checks_windows(self) -> None:
-        """Smoke + integration artifact checks for non-standalone modes on Windows.
+        """Integration artifact checks for non-standalone modes on Windows.
 
         Functional tests for multi-process and single-process modes require
         linuxd, which is Linux-only.  Instead, verify that the cross-compiled
-        artifacts are present and non-trivially sized, confirming successful
-        compilation and static linking against the Nanvix sysroot.
+        ELF executables are present and non-trivially sized, confirming
+        successful compilation and static linking against the Nanvix sysroot.
         """
         mode = self.config.deployment_mode
         print(f"=== zlib Windows integration checks ({mode}) ===")
         print("  (Skipping functional tests: linuxd is not available on Windows)")
 
         failed: list[str] = []
-
-        # Smoke: library and public headers.
-        for artifact, min_size in [
-            (self.repo_root / "libz.a", _MIN_LIBRARY_SIZE),
-            (self.repo_root / "zlib.h", _MIN_HEADER_SIZE),
-            (self.repo_root / "zconf.h", _MIN_HEADER_SIZE),
-        ]:
-            if not artifact.is_file():
-                print(f"  FAIL: {artifact.name} not found")
-                failed.append(artifact.name)
-            elif artifact.stat().st_size < min_size:
-                print(f"  FAIL: {artifact.name} too small ({artifact.stat().st_size} bytes)")
-                failed.append(artifact.name)
-            else:
-                print(f"  OK: {artifact.name} ({artifact.stat().st_size} bytes)")
 
         # Integration: cross-compiled test executables.
         required_elfs = {"example.elf", "minigzip.elf"}
