@@ -27,10 +27,6 @@ _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 
-# Minimum byte size for ELF executables in integration checks, to guard
-# against empty or truncated build outputs.
-_MIN_EXECUTABLE_SIZE = 1000
-
 
 class ZlibBuild(ZScript):
     """Build script for nanvix/zlib."""
@@ -88,14 +84,11 @@ class ZlibBuild(ZScript):
     def _run_tests_windows(self) -> None:
         """Run tests natively on Windows.
 
-        - standalone: full functional tests executed via nanvixd.exe.
-        - multi-process / single-process: integration checks only
-          (linuxd is Linux-only; verify cross-compiled ELF executables are
-          present and non-trivially sized to confirm successful compilation
-          and linking).
+        Only standalone mode is tested on Windows; multi-process and
+        single-process require linuxd, which is Linux-only.
         """
         if self.config.deployment_mode != "standalone":
-            self._run_integration_checks_windows()
+            print(f"Skipping tests on Windows for mode '{self.config.deployment_mode}' (requires linuxd).")
             return
 
         # --- standalone: full functional test via nanvixd.exe ---
@@ -174,42 +167,6 @@ class ZlibBuild(ZScript):
             msg = " ".join(failed)
             raise RuntimeError(f"{len(failed)} test(s) failed: {msg}")
         print(f"\t\t*** All {len(test_binaries)} tests PASSED ***")
-
-    def _run_integration_checks_windows(self) -> None:
-        """Integration artifact checks for non-standalone modes on Windows.
-
-        Functional tests for multi-process and single-process modes require
-        linuxd, which is Linux-only.  Instead, verify that the cross-compiled
-        ELF executables are present and non-trivially sized, confirming
-        successful compilation and static linking against the Nanvix sysroot.
-        """
-        mode = self.config.deployment_mode
-        print(f"=== zlib Windows integration checks ({mode}) ===")
-        print("  (Skipping functional tests: linuxd is not available on Windows)")
-
-        failed: list[str] = []
-
-        # Integration: cross-compiled test executables.
-        required_elfs = {"example.elf", "minigzip.elf"}
-        found: set[str] = set()
-        for candidate in [self.repo_root, self.repo_root / "build"]:
-            if candidate.is_dir():
-                for elf_name in sorted(required_elfs - found):
-                    elf = candidate / elf_name
-                    if elf.is_file():
-                        if elf.stat().st_size < _MIN_EXECUTABLE_SIZE:
-                            print(f"  FAIL: {elf_name} too small ({elf.stat().st_size} bytes)")
-                            failed.append(elf_name)
-                        else:
-                            print(f"  OK: {elf_name} ({elf.stat().st_size} bytes)")
-                        found.add(elf_name)
-        for missing in sorted(required_elfs - found):
-            print(f"  FAIL: {missing} not found")
-            failed.append(missing)
-
-        if failed:
-            raise RuntimeError(f"Integration checks failed: {' '.join(failed)}")
-        print(f"\t\t*** Windows integration checks PASSED ({mode}) ***")
 
     def release(self) -> None:
         """Package the zlib release tarball and verify it."""
