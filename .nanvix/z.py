@@ -27,6 +27,13 @@ _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 
+# Minimum byte sizes used in integration checks to guard against empty or
+# truncated build outputs.  A valid static library is at minimum several KiB;
+# headers and ELF executables are each at least a few hundred bytes.
+_MIN_LIBRARY_SIZE = 1000
+_MIN_HEADER_SIZE = 100
+_MIN_EXECUTABLE_SIZE = 1000
+
 
 class ZlibBuild(ZScript):
     """Build script for nanvix/zlib."""
@@ -82,7 +89,18 @@ class ZlibBuild(ZScript):
         self.run(*self._make_args(*targets), cwd=self.repo_root)
 
     def _run_tests_windows(self) -> None:
-        """Run tests natively on Windows using nanvixd.exe."""
+        """Run tests natively on Windows.
+
+        - standalone: full functional tests executed via nanvixd.exe.
+        - multi-process / single-process: smoke + integration checks only
+          (linuxd is Linux-only; verify cross-compiled artifacts are present
+          and non-trivially sized to confirm successful compilation and linking).
+        """
+        if self.config.deployment_mode != "standalone":
+            self._run_integration_checks_windows()
+            return
+
+        # --- standalone: full functional test via nanvixd.exe ---
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:
             log.fatal(f"{CFG_SYSROOT} is not set.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
@@ -97,12 +115,12 @@ class ZlibBuild(ZScript):
         # The Makefile outputs ELFs directly to the repository root, not to a
         # build/ subdirectory.  Search the repo root first; fall back to build/
         # for any future layout that moves outputs there.
-        _TEST_ALLOWLIST = {"example.elf"}
+        test_allowlist = {"example.elf"}
         test_binaries: list[Path] = []
         for candidate in [self.repo_root, self.repo_root / "build"]:
             if candidate.is_dir():
                 elfs = sorted(candidate.glob("*.elf"))
-                test_binaries = [b for b in elfs if b.name in _TEST_ALLOWLIST]
+                test_binaries = [b for b in elfs if b.name in test_allowlist]
                 if test_binaries:
                     break
 
@@ -158,6 +176,57 @@ class ZlibBuild(ZScript):
             msg = " ".join(failed)
             raise RuntimeError(f"{len(failed)} test(s) failed: {msg}")
         print(f"\t\t*** All {len(test_binaries)} tests PASSED ***")
+
+    def _run_integration_checks_windows(self) -> None:
+        """Smoke + integration artifact checks for non-standalone modes on Windows.
+
+        Functional tests for multi-process and single-process modes require
+        linuxd, which is Linux-only.  Instead, verify that the cross-compiled
+        artifacts are present and non-trivially sized, confirming successful
+        compilation and static linking against the Nanvix sysroot.
+        """
+        mode = self.config.deployment_mode
+        print(f"=== zlib Windows integration checks ({mode}) ===")
+        print("  (Skipping functional tests: linuxd is not available on Windows)")
+
+        failed: list[str] = []
+
+        # Smoke: library and public headers.
+        for artifact, min_size in [
+            (self.repo_root / "libz.a", _MIN_LIBRARY_SIZE),
+            (self.repo_root / "zlib.h", _MIN_HEADER_SIZE),
+            (self.repo_root / "zconf.h", _MIN_HEADER_SIZE),
+        ]:
+            if not artifact.is_file():
+                print(f"  FAIL: {artifact.name} not found")
+                failed.append(artifact.name)
+            elif artifact.stat().st_size < min_size:
+                print(f"  FAIL: {artifact.name} too small ({artifact.stat().st_size} bytes)")
+                failed.append(artifact.name)
+            else:
+                print(f"  OK: {artifact.name} ({artifact.stat().st_size} bytes)")
+
+        # Integration: cross-compiled test executables.
+        required_elfs = {"example.elf", "minigzip.elf"}
+        found: set[str] = set()
+        for candidate in [self.repo_root, self.repo_root / "build"]:
+            if candidate.is_dir():
+                for elf_name in sorted(required_elfs - found):
+                    elf = candidate / elf_name
+                    if elf.is_file():
+                        if elf.stat().st_size < _MIN_EXECUTABLE_SIZE:
+                            print(f"  FAIL: {elf_name} too small ({elf.stat().st_size} bytes)")
+                            failed.append(elf_name)
+                        else:
+                            print(f"  OK: {elf_name} ({elf.stat().st_size} bytes)")
+                        found.add(elf_name)
+        for missing in sorted(required_elfs - found):
+            print(f"  FAIL: {missing} not found")
+            failed.append(missing)
+
+        if failed:
+            raise RuntimeError(f"Integration checks failed: {' '.join(failed)}")
+        print(f"\t\t*** Windows integration checks PASSED ({mode}) ***")
 
     def release(self) -> None:
         """Package the zlib release tarball and verify it."""
