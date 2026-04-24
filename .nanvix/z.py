@@ -94,15 +94,21 @@ class ZlibBuild(ZScript):
         if not mkramfs.is_file():
             log.fatal("mkramfs.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
 
-        build_dir = self.repo_root / "build"
-        # Only run self-contained test executables; skip CLI tools like minigzip.
+        # The Makefile outputs ELFs directly to the repository root, not to a
+        # build/ subdirectory.  Search the repo root first; fall back to build/
+        # for any future layout that moves outputs there.
         _TEST_ALLOWLIST = {"example.elf"}
-        all_elfs = sorted(build_dir.glob("*.elf")) if build_dir.is_dir() else []
-        test_binaries = [b for b in all_elfs if b.name in _TEST_ALLOWLIST]
+        test_binaries: list[Path] = []
+        for candidate in [self.repo_root, self.repo_root / "build"]:
+            if candidate.is_dir():
+                elfs = sorted(candidate.glob("*.elf"))
+                test_binaries = [b for b in elfs if b.name in _TEST_ALLOWLIST]
+                if test_binaries:
+                    break
 
         if not test_binaries:
-            print("No test binaries found in build/ -- smoke test only.")
-            print("OK: library-only repo, no functional tests to run on Windows")
+            print("No test binaries found in the repository -- smoke test only.")
+            print("OK: no functional tests to run on Windows")
             return
 
         import shutil
