@@ -85,7 +85,9 @@ class ZlibBuild(ZScript):
         """Run tests natively on Windows.
 
         Only standalone mode is tested on Windows; multi-process and
-        single-process require linuxd, which is Linux-only.
+        single-process require linuxd, which is Linux-only. Standalone
+        test binaries are discovered in the repository root, where the
+        Makefile emits the ELF outputs, rather than under `build/`.
         """
         if self.config.deployment_mode != "standalone":
             print(f"Skipping tests on Windows for mode '{self.config.deployment_mode}' (requires linuxd).")
