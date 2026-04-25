@@ -113,9 +113,12 @@ class ZlibBuild(ZScript):
             test_binaries = [b for b in elfs if b.name in test_allowlist]
 
         if not test_binaries:
-            print("No test binaries found in the repository -- smoke test only.")
-            print("OK: no functional tests to run on Windows")
-            return
+            expected = ", ".join(sorted(test_allowlist))
+            log.fatal(
+                f"No allowlisted test binaries found in the repository root. Expected: {expected}.",
+                code=EXIT_MISSING_DEP,
+                hint="Build the test binaries first (for example, run `./z build`) and then rerun `./z test`.",
+            )
 
         import shutil
         import tempfile
