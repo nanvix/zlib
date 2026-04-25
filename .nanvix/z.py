@@ -103,17 +103,14 @@ class ZlibBuild(ZScript):
         if not mkramfs.is_file():
             log.fatal("mkramfs.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
 
-        # The Makefile outputs ELFs directly to the repository root, not to a
-        # build/ subdirectory.  Search the repo root first; fall back to build/
-        # for any future layout that moves outputs there.
+        # The Makefile outputs ELFs directly to the repository root. Keep test
+        # discovery aligned with the later relative guest launch path
+        # ("./<name>.elf") by only selecting binaries from the repository root.
         test_allowlist = {"example.elf"}
         test_binaries: list[Path] = []
-        for candidate in [self.repo_root, self.repo_root / "build"]:
-            if candidate.is_dir():
-                elfs = sorted(candidate.glob("*.elf"))
-                test_binaries = [b for b in elfs if b.name in test_allowlist]
-                if test_binaries:
-                    break
+        if self.repo_root.is_dir():
+            elfs = sorted(self.repo_root.glob("*.elf"))
+            test_binaries = [b for b in elfs if b.name in test_allowlist]
 
         if not test_binaries:
             print("No test binaries found in the repository -- smoke test only.")
