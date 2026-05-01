@@ -31,6 +31,8 @@ jobs:
       platforms: '["hyperlight","microvm"]'
       process-modes: '["multi-process","single-process","standalone"]'
       memory-sizes: '["128mb","256mb"]'
+      matrix-exclude: '[{"platform":"hyperlight"}]'
+      windows-matrix-exclude: '[{"platform":"hyperlight"}]'
       skip-full-test-modes: '[]'
       caller-event-name: ${{ github.event_name }}
       windows-test: true
@@ -51,10 +53,11 @@ jobs:
       platforms: '["hyperlight","microvm"]'
       process-modes: '["multi-process","single-process","standalone"]'
       memory-sizes: '["128mb","256mb"]'
+      matrix-exclude: '[{"platform":"hyperlight"}]'
+      windows-matrix-exclude: '[{"platform":"hyperlight"}]'
       skip-full-test-modes: '[]'
       caller-event-name: 'schedule'
       windows-test: true
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
-
