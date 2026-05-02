@@ -40,7 +40,7 @@ class ZlibBuild(ZScript):
                 code=EXIT_MISSING_DEP,
                 hint="Run `./z setup` first to download the sysroot.",
             )
-        toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix")
+        toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix") or "/opt/nanvix"
         sysroot_p = self.translate_path(Path(sysroot))
         toolchain_p = self.translate_path(Path(toolchain))
 
@@ -60,9 +60,9 @@ class ZlibBuild(ZScript):
         args.extend(targets)
         return args
 
-    def setup(self) -> None:
+    def setup(self) -> bool:
         """Download the Nanvix sysroot."""
-        super().setup()
+        return super().setup()
 
     def build(self) -> None:
         """Cross-compile libz.a for Nanvix."""
