@@ -39,7 +39,7 @@ contrib/nuget/obj
 minigzip.elf
 example.elf
 
-# Nanvix build state (keep .nanvix/z.py tracked)
+# Nanvix Integration
 .nanvix/venv/
 .nanvix/cache/
 .nanvix/sysroot/
@@ -47,3 +47,4 @@ example.elf
 .nanvix/env.json
 .nanvix/nanvix.lock
 .nanvix/__pycache__
+pyrightconfig.json
