@@ -45,17 +45,21 @@ class ZlibBuild(ZScript):
         toolchain_p = self.translate_path(Path(toolchain))
 
         args = [
-            "make", "-f", ".nanvix/Makefile.nanvix",
+            "make",
+            "-f",
+            ".nanvix/Makefile.nanvix",
             f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={sysroot_p}",
             f"{_MAKE_VAR_TOOLCHAIN}={toolchain_p}",
         ]
 
-        args.extend([
-            f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
-            f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
-            f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
-        ])
+        args.extend(
+            [
+                f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
+                f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
+                f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
+            ]
+        )
 
         args.extend(targets)
         return args
@@ -90,20 +94,34 @@ class ZlibBuild(ZScript):
         Makefile emits the ELF outputs, rather than under `build/`.
         """
         if self.config.deployment_mode != "standalone":
-            print(f"Skipping tests on Windows for mode '{self.config.deployment_mode}' (requires linuxd).")
+            print(
+                f"Skipping tests on Windows for mode '{self.config.deployment_mode}' (requires linuxd)."
+            )
             return
 
         # --- standalone: full functional test via nanvixd.exe ---
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:
-            log.fatal(f"{CFG_SYSROOT} is not set.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
+            log.fatal(
+                f"{CFG_SYSROOT} is not set.",
+                code=EXIT_MISSING_DEP,
+                hint="Run `./z setup` first.",
+            )
         sysroot_path = Path(sysroot)
         nanvixd = sysroot_path / "bin" / "nanvixd.exe"
         mkramfs = sysroot_path / "bin" / "mkramfs.exe"
         if not nanvixd.is_file():
-            log.fatal("nanvixd.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
+            log.fatal(
+                "nanvixd.exe not found.",
+                code=EXIT_MISSING_DEP,
+                hint="Run `./z setup` first.",
+            )
         if not mkramfs.is_file():
-            log.fatal("mkramfs.exe not found.", code=EXIT_MISSING_DEP, hint="Run `./z setup` first.")
+            log.fatal(
+                "mkramfs.exe not found.",
+                code=EXIT_MISSING_DEP,
+                hint="Run `./z setup` first.",
+            )
 
         # The Makefile outputs ELFs directly to the repository root, not to a
         # build/ subdirectory.  Search the repo root first; fall back to build/
@@ -128,6 +146,7 @@ class ZlibBuild(ZScript):
 
         import shutil
         import tempfile
+
         failed = []
         for binary in test_binaries:
             name = binary.stem
@@ -144,7 +163,8 @@ class ZlibBuild(ZScript):
                 try:
                     subprocess.run(
                         [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
-                        check=True, timeout=60,
+                        check=True,
+                        timeout=60,
                     )
                 except subprocess.CalledProcessError as e:
                     print(f"FAIL {name} (mkramfs exit code {e.returncode})")
@@ -156,9 +176,17 @@ class ZlibBuild(ZScript):
                     continue
                 try:
                     result = subprocess.run(
-                        [str(nanvixd.resolve()), "-bin-dir", str((sysroot_path / "bin").resolve()),
-                         "-ramfs", str(ramfs_img), "--", f"./{binary.name}"],
-                        stdin=subprocess.DEVNULL, timeout=120,
+                        [
+                            str(nanvixd.resolve()),
+                            "-bin-dir",
+                            str((sysroot_path / "bin").resolve()),
+                            "-ramfs",
+                            str(ramfs_img),
+                            "--",
+                            f"./{binary.name}",
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        timeout=120,
                     )
                     if result.returncode != 0:
                         print(f"FAIL {name} (exit code {result.returncode})")
@@ -182,7 +210,10 @@ class ZlibBuild(ZScript):
     def clean(self) -> None:
         """Remove build artifacts."""
         self.run(
-            "make", "-f", ".nanvix/Makefile.nanvix", "clean",
+            "make",
+            "-f",
+            ".nanvix/Makefile.nanvix",
+            "clean",
             cwd=self.repo_root,
         )
 
