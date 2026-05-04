@@ -147,7 +147,7 @@ class ZlibBuild(ZScript):
         import shutil
         import tempfile
 
-        failed = []
+        failed: list[str] = []
         for binary in test_binaries:
             name = binary.stem
             print(f"RUN  {name}...")
