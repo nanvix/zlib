@@ -35,16 +35,5 @@ contrib/nuget/bin
 contrib/nuget/obj
 *.included
 
-.z.cache
 minigzip.elf
 example.elf
-
-# Nanvix Integration
-.nanvix/venv/
-.nanvix/cache/
-.nanvix/sysroot/
-.nanvix/buildroot/
-.nanvix/env.json
-.nanvix/nanvix.lock
-.nanvix/__pycache__
-pyrightconfig.json
