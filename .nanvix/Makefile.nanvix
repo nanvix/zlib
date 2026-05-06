@@ -73,7 +73,6 @@ ifdef CONFIG_NANVIX
       -w $(DOCKER_SYSROOT_PATH) \
       -e HOME=/tmp \
       -e USER=$(shell whoami) \
-      -e RUST_LOG=trace \
       $(NANVIX_DOCKER_IMAGE)
     CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
     AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
