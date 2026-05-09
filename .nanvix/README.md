@@ -56,7 +56,7 @@ No other `.c` or `.h` files were modified. The compression algorithms, public AP
 | Compiler | `i686-nanvix-gcc` |
 | Archiver | `i686-nanvix-ar` |
 | Ranlib | `i686-nanvix-ranlib` |
-| Docker image | `nanvix/toolchain:latest-minimal` |
+| Docker image | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` |
 | CFLAGS | `-O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse` |
 | LDFLAGS | `-T user.ld -static -Wl,-z,noexecstack` |
 
@@ -100,7 +100,7 @@ Override the pinned nanvix-zutil version with `NANVIX_ZUTIL_VERSION=<version>`.
 
 ```bash
 # Pull the Docker image
-docker pull nanvix/toolchain:latest-minimal
+docker pull ghcr.io/nanvix/toolchain-gcc:sha-34a3641
 
 # Download Nanvix sysroot
 curl -fsSL https://raw.githubusercontent.com/nanvix/nanvix/refs/heads/dev/scripts/get-nanvix.sh \
@@ -131,7 +131,7 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 | `NANVIX_HOME` | `$HOME/nanvix` | Path to Nanvix sysroot (must contain `lib/user.ld`) |
 | `NANVIX_TOOLCHAIN` | `/opt/nanvix` | Path to cross-compiler (must contain `bin/i686-nanvix-gcc`) |
 | `CONFIG_NANVIX_DOCKER` | *(auto)* | Set to `y` to force Docker even when native toolchain exists |
-| `NANVIX_DOCKER_IMAGE` | `nanvix/toolchain:latest-minimal` | Docker image for cross-compilation |
+| `NANVIX_DOCKER_IMAGE` | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` | Docker image for cross-compilation |
 | `PLATFORM` | `unknown` | Target platform name (`microvm`, `hyperlight`) |
 | `PROCESS_MODE` | `unknown` | Deployment mode (`multi-process`, `single-process`, `standalone`) |
 | `MEMORY_SIZE` | `unknown` | Memory configuration (`128mb`, `256mb`) |

@@ -19,6 +19,9 @@ from nanvix_zutil import CFG_SYSROOT, CFG_TOOLCHAIN, EXIT_MISSING_DEP, ZScript, 
 
 IS_WINDOWS = sys.platform == "win32"
 
+#: Docker image for cross-compiling Nanvix targets.
+NANVIX_DOCKER_IMAGE = "ghcr.io/nanvix/toolchain-gcc:sha-34a3641"
+
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_CONFIG = "CONFIG_NANVIX"
 _MAKE_VAR_HOME = "NANVIX_HOME"
@@ -30,6 +33,10 @@ _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 
 class ZlibBuild(ZScript):
     """Build script for nanvix/zlib."""
+
+    def docker_image(self) -> str:
+        """Return the default Docker image for cross-compilation."""
+        return NANVIX_DOCKER_IMAGE
 
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list."""
