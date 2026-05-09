@@ -17,7 +17,7 @@
 # Toolchain Detection
 # ===========================================================================
 
-NANVIX_DOCKER_IMAGE ?= nanvix/toolchain:latest-minimal
+NANVIX_DOCKER_IMAGE ?= ghcr.io/nanvix/toolchain-gcc:sha-34a3641
 
 ifdef CONFIG_NANVIX
   NANVIX_TOOLCHAIN ?= /opt/nanvix
@@ -28,12 +28,15 @@ ifdef CONFIG_NANVIX
       DOCKER_AVAILABLE := $(shell command -v docker 2>/dev/null)
       ifdef DOCKER_AVAILABLE
         DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
-        ifdef DOCKER_IMAGE_EXISTS
-          CONFIG_NANVIX_DOCKER := y
-          $(info [nanvix] Using Docker (native toolchain not found at $(NANVIX_TOOLCHAIN)))
-        else
-          $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
+        ifndef DOCKER_IMAGE_EXISTS
+          $(info [nanvix] Pulling Docker image $(NANVIX_DOCKER_IMAGE)...)
+          DOCKER_PULL_RESULT := $(shell docker pull $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
+          ifndef DOCKER_PULL_RESULT
+            $(error Failed to pull Docker image $(NANVIX_DOCKER_IMAGE))
+          endif
         endif
+        CONFIG_NANVIX_DOCKER := y
+        $(info [nanvix] Using Docker (native toolchain not found at $(NANVIX_TOOLCHAIN)))
       else
         $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN) and Docker not available)
       endif
@@ -45,7 +48,11 @@ ifdef CONFIG_NANVIX
     endif
     DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
     ifndef DOCKER_IMAGE_EXISTS
-      $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
+      $(info [nanvix] Pulling Docker image $(NANVIX_DOCKER_IMAGE)...)
+      DOCKER_PULL_RESULT := $(shell docker pull $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
+      ifndef DOCKER_PULL_RESULT
+        $(error Failed to pull Docker image $(NANVIX_DOCKER_IMAGE))
+      endif
     endif
     $(info [nanvix] Using Docker (explicitly requested))
   endif
@@ -235,10 +242,10 @@ package: all
 	cp -f $(STATICLIB) dist/$(ARTIFACT_NAME)/sysroot/lib/
 	cp -f zlib.h zconf.h dist/$(ARTIFACT_NAME)/sysroot/include/
 	-cp -f $(TEST_PROGS) dist/$(ARTIFACT_NAME)/sysroot/bin/ 2>/dev/null || true
-	tar -cjf dist/$(ARTIFACT_NAME).tar.bz2 -C dist/$(ARTIFACT_NAME) sysroot
-	@echo "  Package: dist/$(ARTIFACT_NAME).tar.bz2"
+	tar -czf dist/$(ARTIFACT_NAME).tar.gz -C dist/$(ARTIFACT_NAME) sysroot
+	@echo "  Package: dist/$(ARTIFACT_NAME).tar.gz"
 	@echo "  Contents:"
-	@tar tjf dist/$(ARTIFACT_NAME).tar.bz2 | head -20
+	@tar tzf dist/$(ARTIFACT_NAME).tar.gz | head -20
 
 # ===========================================================================
 # Verify Package
@@ -247,13 +254,13 @@ package: all
 verify-package:
 	@echo "=== Verifying zlib package ==="
 	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
-	@TARBALL="dist/$(ARTIFACT_NAME).tar.bz2"; \
+	@TARBALL="dist/$(ARTIFACT_NAME).tar.gz"; \
 	if [ ! -f "$$TARBALL" ]; then \
 	  echo "FAIL: Package tarball not found: $$TARBALL"; exit 1; \
 	fi; \
 	echo "Package contents:"; \
-	tar tjf "$$TARBALL"; \
-	if ! tar tjf "$$TARBALL" | grep -q 'sysroot/lib/'; then \
+	tar tzf "$$TARBALL"; \
+	if ! tar tzf "$$TARBALL" | grep -q 'sysroot/lib/'; then \
 	  echo "FAIL: Package missing sysroot/lib/ entries"; exit 1; \
 	fi; \
 	echo "  PASS: zlib package verification"
