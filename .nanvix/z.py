@@ -11,7 +11,6 @@ Usage:
     ./z clean     # Remove build artifacts
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -82,15 +81,85 @@ class ZlibBuild(ZScript):
     def test(self) -> None:
         """Run the zlib test suite.
 
-        On non-Windows, delegates to the Makefile (smoke + integration + functional).
-        On Windows, runs test binaries from build/ via nanvixd.exe natively,
-        following the same pattern as posix-tests and cpython.
+        Smoke and integration tests are always delegated to the Makefile.
+        The functional test in standalone mode is handled in Python via
+        make_initrd so that initrd creation is shared across platforms.
         """
         if IS_WINDOWS:
             self._run_tests_windows()
             return
-        targets = self.targets if self.targets else ["test"]
-        self.run(*self._make_args(*targets), cwd=self.repo_root)
+
+        if self.config.deployment_mode == "standalone":
+            # Smoke + integration via Makefile, functional via Python.
+            self.run(
+                *self._make_args("test-smoke", "test-integration"), cwd=self.repo_root
+            )
+            self._run_functional_standalone()
+        else:
+            targets = self.targets if self.targets else ["test"]
+            self.run(*self._make_args(*targets), cwd=self.repo_root)
+
+    def _run_functional_standalone(self) -> None:
+        """Run the standalone functional test using make_initrd.
+
+        Creates an initrd bundling example.elf with system daemons via
+        make_initrd, and a ramfs providing /tmp for test file output.
+        """
+        import tempfile
+
+        binary = self.repo_root / "example.elf"
+        if not binary.is_file():
+            log.fatal(
+                "example.elf not found.",
+                code=EXIT_MISSING_DEP,
+                hint="Run `./z build` first.",
+            )
+
+        print("=== zlib functional tests ===")
+        print("  Running example.elf via nanvixd standalone...")
+
+        # Bundle example.elf + daemons into an initrd.
+        initrd = self.make_initrd("example.elf", app_args=["/tmp/zlib_test"])
+
+        # Build a ramfs with /tmp for test file output.
+        sysroot = self.config.get(CFG_SYSROOT, "")
+        sysroot_path = Path(sysroot)
+        mkramfs = sysroot_path / "bin" / "mkramfs.elf"
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="nanvix_zlib_") as tmpdir:
+                tmpdir_path = Path(tmpdir)
+                ramfs_dir = tmpdir_path / "ramfs"
+                ramfs_dir.mkdir()
+                (ramfs_dir / "tmp").mkdir(exist_ok=True)
+                ramfs_img = tmpdir_path / "rootfs.img"
+
+                self.run(
+                    str(mkramfs),
+                    "-o",
+                    str(ramfs_img),
+                    str(ramfs_dir),
+                    docker=False,
+                )
+
+                self.run(
+                    str(sysroot_path / "bin" / "nanvixd.elf"),
+                    "-bin-dir",
+                    str(sysroot_path / "bin"),
+                    "-ramfs",
+                    str(ramfs_img),
+                    "--",
+                    str(initrd),
+                    docker=False,
+                    timeout=120,
+                )
+        finally:
+            if initrd.exists():
+                initrd.unlink()
+
+        print("  PASS: example test standalone (exit code 0)")
+        print("  PASS: zlib functional tests")
+        print("=== All zlib tests PASSED ===")
 
     def _run_tests_windows(self) -> None:
         """Run tests natively on Windows.
@@ -151,58 +220,49 @@ class ZlibBuild(ZScript):
                 hint="Build the test binaries first (for example, run `./z build`) and then rerun `./z test`.",
             )
 
-        import shutil
         import tempfile
 
         failed: list[str] = []
         for binary in test_binaries:
             name = binary.stem
             print(f"RUN  {name}...")
+            # Bundle the test program in an initrd image.
+            initrd = self.make_initrd(binary.name, app_args=["/tmp/zlib_test"])
+            # Build a ramfs image with a /tmp directory for test output.
             with tempfile.TemporaryDirectory(prefix=f"nanvix_{name}_") as tmpdir:
                 tmpdir_path = Path(tmpdir)
                 ramfs_dir = tmpdir_path / "ramfs"
                 ramfs_dir.mkdir()
                 (ramfs_dir / "tmp").mkdir(exist_ok=True)
-                shutil.copy2(binary, ramfs_dir / binary.name)
-                # Write ramfs image alongside the ramfs source dir to avoid
-                # self-inclusion while keeping artifacts scoped to this temp dir.
                 ramfs_img = tmpdir_path / f"rootfs_{name}.img"
+
                 try:
-                    subprocess.run(
-                        [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
-                        check=True,
-                        timeout=60,
+                    self.run(
+                        str(mkramfs),
+                        "-o",
+                        str(ramfs_img),
+                        str(ramfs_dir),
+                        docker=False,
                     )
-                except subprocess.CalledProcessError as e:
-                    print(f"FAIL {name} (mkramfs exit code {e.returncode})")
-                    failed.append(name)
-                    continue
-                except subprocess.TimeoutExpired:
-                    print(f"FAIL {name} (mkramfs timeout)")
-                    failed.append(name)
-                    continue
-                try:
-                    result = subprocess.run(
-                        [
-                            str(nanvixd.resolve()),
-                            "-bin-dir",
-                            str((sysroot_path / "bin").resolve()),
-                            "-ramfs",
-                            str(ramfs_img),
-                            "--",
-                            f"./{binary.name}",
-                        ],
-                        stdin=subprocess.DEVNULL,
+
+                    self.run(
+                        str(nanvixd),
+                        "-bin-dir",
+                        str(sysroot_path / "bin"),
+                        "-ramfs",
+                        str(ramfs_img),
+                        "--",
+                        str(initrd),
+                        docker=False,
                         timeout=120,
                     )
-                    if result.returncode != 0:
-                        print(f"FAIL {name} (exit code {result.returncode})")
-                        failed.append(name)
-                    else:
-                        print(f"OK   {name}")
-                except subprocess.TimeoutExpired:
-                    print(f"FAIL {name} (timeout)")
+                    print(f"OK   {name}")
+                except SystemExit:
+                    print(f"FAIL {name}")
                     failed.append(name)
+                finally:
+                    if initrd.exists():
+                        initrd.unlink()
 
         if failed:
             msg = " ".join(failed)
