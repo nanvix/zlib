@@ -192,27 +192,7 @@ test-integration: $(TEST_PROGS)
 test-functional: test-integration
 	@echo "=== zlib functional tests ==="
 ifeq ($(PROCESS_MODE),standalone)
-ifdef CONFIG_NANVIX_DOCKER
-	@echo "  Running example$(EXE) via nanvixd.elf standalone (Docker)..."
-	$(DOCKER_RUN_FUNCTIONAL) sh -c '\
-	  mkdir -p /tmp/nanvix-ramfs/tmp && \
-	  cp $(DOCKER_WORKSPACE_PATH)/example$(EXE) /tmp/nanvix-ramfs/ && \
-	  ./bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && \
-	  timeout --foreground 120 ./bin/nanvixd.elf \
-	    -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	    -- $(DOCKER_WORKSPACE_PATH)/example$(EXE) /tmp/zlib_test'
-	@echo "  PASS: example test standalone (exit code 0)"
-else
-	@echo "  Running example$(EXE) via nanvixd.elf standalone..."
-	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs/tmp
-	@cp $(abspath example$(EXE)) /tmp/nanvix-ramfs/
-	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
-	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
-	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	  -- $(abspath example$(EXE)) /tmp/zlib_test
-	@rm -rf /tmp/nanvix-ramfs /tmp/rootfs.img
-	@echo "  PASS: example test standalone (exit code 0)"
-endif
+	@echo "  Standalone functional tests are handled by ./z test"
 else
 ifdef CONFIG_NANVIX_DOCKER
 	@echo "  Running example$(EXE) via nanvixd.elf (Docker)..."
