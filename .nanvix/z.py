@@ -14,7 +14,13 @@ Usage:
 import sys
 from pathlib import Path
 
-from nanvix_zutil import CFG_SYSROOT, TOOLCHAIN_CONTAINER_PATH, EXIT_MISSING_DEP, ZScript, log
+from nanvix_zutil import (
+    CFG_SYSROOT,
+    EXIT_MISSING_DEP,
+    TOOLCHAIN_CONTAINER_PATH,
+    ZScript,
+    log,
+)
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -22,7 +28,6 @@ IS_WINDOWS = sys.platform == "win32"
 NANVIX_DOCKER_IMAGE = "ghcr.io/nanvix/toolchain-gcc:sha-34a3641"
 
 # Makefile variable names (build-system-specific).
-_MAKE_VAR_CONFIG = "CONFIG_NANVIX"
 _MAKE_VAR_HOME = "NANVIX_HOME"
 _MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
 _MAKE_VAR_PLATFORM = "PLATFORM"
@@ -37,8 +42,20 @@ class ZlibBuild(ZScript):
         """Return the default Docker image for cross-compilation."""
         return NANVIX_DOCKER_IMAGE
 
-    def _make_args(self, *targets: str) -> list[str]:
-        """Build the common make argument list."""
+    def _make_args(
+        self,
+        *targets: str,
+        docker: bool | None = None,
+    ) -> list[str]:
+        """Build the common make argument list.
+
+        ``docker`` controls path translation for ``NANVIX_HOME``:
+        ``None`` (default) translates for the current run context (Docker
+        if active, host otherwise); ``False`` forces a host path even when
+        the script itself is running under Docker. Use ``docker=False``
+        for invocations whose recipes execute purely on the host
+        (release, clean, host-side test branches).
+        """
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:
             log.fatal(
@@ -47,14 +64,16 @@ class ZlibBuild(ZScript):
                 hint="Run `./z setup` first to download the sysroot.",
             )
         toolchain = str(TOOLCHAIN_CONTAINER_PATH)
-        sysroot_p = self.translate_path(Path(sysroot))
+        if docker is False:
+            sysroot_p = Path(sysroot)
+        else:
+            sysroot_p = self.translate_path(Path(sysroot))
         toolchain_p = toolchain
 
         args = [
             "make",
             "-f",
             ".nanvix/Makefile.nanvix",
-            f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={sysroot_p}",
             f"{_MAKE_VAR_TOOLCHAIN}={toolchain_p}",
         ]
@@ -76,7 +95,7 @@ class ZlibBuild(ZScript):
 
     def build(self) -> None:
         """Cross-compile libz.a for Nanvix."""
-        self.run(*self._make_args("all"), cwd=self.repo_root)
+        self.run(*self._make_args("all"), cwd=self.repo_root, docker=True)
 
     def test(self) -> None:
         """Run the zlib test suite.
@@ -90,14 +109,21 @@ class ZlibBuild(ZScript):
             return
 
         if self.config.deployment_mode == "standalone":
-            # Smoke + integration via Makefile, functional via Python.
+            # Smoke + integration via Makefile (host-side; recipes only
+            # touch already-built artifacts), functional via Python.
             self.run(
-                *self._make_args("test-smoke", "test-integration"), cwd=self.repo_root
+                *self._make_args("test-smoke", "test-integration", docker=False),
+                cwd=self.repo_root,
+                docker=False,
             )
             self._run_functional_standalone()
         else:
             targets = self.targets if self.targets else ["test"]
-            self.run(*self._make_args(*targets), cwd=self.repo_root)
+            self.run(
+                *self._make_args(*targets, docker=False),
+                cwd=self.repo_root,
+                docker=False,
+            )
 
     def _run_functional_standalone(self) -> None:
         """Run the standalone functional test using make_initrd.
@@ -271,8 +297,16 @@ class ZlibBuild(ZScript):
 
     def release(self) -> None:
         """Package the zlib release tarball and verify it."""
-        self.run(*self._make_args("package"), cwd=self.repo_root)
-        self.run(*self._make_args("verify-package"), cwd=self.repo_root)
+        self.run(
+            *self._make_args("package", docker=False),
+            cwd=self.repo_root,
+            docker=False,
+        )
+        self.run(
+            *self._make_args("verify-package", docker=False),
+            cwd=self.repo_root,
+            docker=False,
+        )
 
     def clean(self) -> None:
         """Remove build artifacts."""
@@ -282,6 +316,7 @@ class ZlibBuild(ZScript):
             ".nanvix/Makefile.nanvix",
             "clean",
             cwd=self.repo_root,
+            docker=False,
         )
 
 
