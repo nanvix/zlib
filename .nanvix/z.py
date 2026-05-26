@@ -11,6 +11,7 @@ Usage:
     ./z clean     # Remove build artifacts
 """
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -18,12 +19,21 @@ from nanvix_zutil import (
     CFG_SYSROOT,
     EXIT_MISSING_DEP,
     TOOLCHAIN_CONTAINER_PATH,
+    DockerConfig,
     ZScript,
     log,
     make_initrd,
     run,
 )
 from nanvix_zutil.helpers import InitRdArgs
+
+#: Build artifacts produced inside the container that must be copied back
+#: to the host workspace so that `./z test` and `./z release` can find them.
+_BUILD_OUTPUT_FILES = [
+    "libz.a",
+    "example.elf",
+    "minigzip.elf",
+]
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -44,6 +54,16 @@ class ZlibBuild(ZScript):
     def docker_image(self) -> str:
         """Return the default Docker image for cross-compilation."""
         return NANVIX_DOCKER_IMAGE
+
+    def docker_config(self, image: str) -> DockerConfig:
+        """Extend the default Docker config with build artifact copy-back.
+
+        On Windows the build runs in a container-local directory (tar-copy
+        mode), so output files must be explicitly copied back to the
+        workspace mount; otherwise `./z test` cannot find example.elf.
+        """
+        cfg = super().docker_config(image)
+        return dataclasses.replace(cfg, output_files=list(_BUILD_OUTPUT_FILES))
 
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list.
