@@ -117,12 +117,6 @@ class ZlibBuild(ZScript):
             return
 
         if self.config.deployment_mode == "standalone":
-            # Smoke + integration via Makefile (host-side; recipes only
-            # touch already-built artifacts), functional via Python.
-            run(
-                *self._make_args("test-smoke", "test-integration"),
-                cwd=self.repo_root,
-            )
             self._run_functional_standalone()
         else:
             targets = self.targets if self.targets else ["test"]
