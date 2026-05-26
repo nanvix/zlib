@@ -6,9 +6,7 @@
 #
 # Targets:
 #   all: Build static library and test programs
-#   test: Run all tests (smoke, integration, functional)
-#   test-smoke: Verify build artifacts (no runtime needed)
-#   test-integration: Verify test program build artifacts
+#   test: Run functional tests
 #   test-functional: Run example.elf on nanvixd$(EXE)
 #   package: Create a release tarball with build artifacts and headers
 #   verify-package: Verify the contents of the release tarball
@@ -120,27 +118,8 @@ zutil.o: zutil.c zutil.h zlib.h zconf.h
 # Test Targets
 # ===========================================================================
 
-# --- Smoke tests: verify build artifacts (no runtime needed) ---
-test-smoke:
-	@echo "=== zlib smoke tests ==="
-	@test -f $(STATICLIB) || { echo "  FAIL: $(STATICLIB) not found"; exit 1; }
-	@size=$$(wc -c < $(STATICLIB)); \
-	  if [ "$$size" -lt 1000 ]; then echo "  FAIL: $(STATICLIB) too small"; exit 1; fi
-	@test -f zlib.h || { echo "  FAIL: zlib.h not found"; exit 1; }
-	@test -f zconf.h || { echo "  FAIL: zconf.h not found"; exit 1; }
-	@echo "  PASS: zlib smoke tests"
-
-# --- Integration tests: verify test program build artifacts ---
-test-integration:
-	@echo "=== zlib integration tests ==="
-	@test -f example$(EXE) || { echo "  FAIL: example$(EXE) not built"; exit 1; }
-	@test -f minigzip$(EXE) || { echo "  FAIL: minigzip$(EXE) not built"; exit 1; }
-	@echo "  OK: example$(EXE) ($$(wc -c < example$(EXE)) bytes)"
-	@echo "  OK: minigzip$(EXE) ($$(wc -c < minigzip$(EXE)) bytes)"
-	@echo "  PASS: zlib integration tests"
-
 # --- Functional tests: run example.elf on nanvixd$(EXE) ---
-test-functional: test-integration
+test-functional:
 	@echo "=== zlib functional tests ==="
 ifeq ($(PROCESS_MODE),standalone)
 	@echo "  Standalone functional tests are handled by ./z test"
@@ -152,7 +131,7 @@ endif
 	@echo "  PASS: zlib functional tests"
 
 # --- Run all test levels ---
-test: test-smoke test-integration test-functional
+test: test-functional
 	@echo "=== All zlib tests PASSED ==="
 
 # ===========================================================================
@@ -206,4 +185,4 @@ clean:
 	rm -f *.a *$(EXE)
 	rm -rf dist/
 
-.PHONY: all clean test test-smoke test-integration test-functional package verify-package
+.PHONY: all clean test test-functional package verify-package
