@@ -37,3 +37,6 @@ contrib/nuget/obj
 
 minigzip.elf
 example.elf
+
+# Nanvix
+nanvixd_*.log
