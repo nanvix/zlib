@@ -40,3 +40,4 @@ example.elf
 
 # Nanvix
 nanvixd_*.log
+pyrightconfig.json
