@@ -1,0 +1,73 @@
+# Copyright(c) The Maintainers of Nanvix.
+# Licensed under the MIT License.
+#
+# This workflow runs nightly and bumps the Nanvix toolchain Docker image
+# reference (`ghcr.io/nanvix/toolchain-gcc:sha-<short>`) used by this
+# repository to the latest published `sha-*` tag on GHCR. When the
+# resolved tag differs from the currently pinned one, it opens (or
+# refreshes) a pull request against the default branch.
+#
+# The heavy lifting lives in dedicated shell scripts under
+# `.nanvix/scripts/` so the same logic can be invoked locally for
+# debugging without going through Actions.
+#
+# Files updated by this automation:
+#   - .nanvix/z.py                       (NANVIX_DOCKER_IMAGE constant)
+#   - .github/workflows/nanvix-ci.yml    (docker-image inputs)
+
+name: Nanvix Update Docker Image
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: read
+
+concurrency:
+  group: nanvix-update-docker-image
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: Bump Nanvix toolchain image
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.DISPATCH_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+      IMAGE_NAME: ghcr.io/nanvix/toolchain-gcc
+      PACKAGE_OWNER: nanvix
+      PACKAGE_NAME: toolchain-gcc
+      BRANCH: automation/update-nanvix-toolchain-image
+      ASSIGNEE: ppenna
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve latest sha-* tag from GHCR
+        id: latest
+        run: bash .nanvix/scripts/resolve-toolchain-tag.sh
+
+      - name: Update image references
+        id: update
+        env:
+          NEW_IMAGE: ${{ steps.latest.outputs.image }}
+        run: bash .nanvix/scripts/update-toolchain-image.sh
+
+      - name: Commit, push, and open pull request
+        if: steps.update.outputs.changed == '1'
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+          NEW_IMAGE: ${{ steps.latest.outputs.image }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: bash .nanvix/scripts/open-toolchain-image-pr.sh
+
+      - name: Job summary
+        if: always()
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+          CHANGED: ${{ steps.update.outputs.changed }}
+          BRANCH: ${{ env.BRANCH }}
+        run: bash .nanvix/scripts/write-toolchain-image-summary.sh
