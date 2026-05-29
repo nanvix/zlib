@@ -7,3 +7,5 @@ buildroot/
 black.toml
 env.json
 pyrightconfig.json
+dist
+out

@@ -12,7 +12,9 @@ Usage:
 """
 
 import dataclasses
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from nanvix_zutil import (
@@ -46,6 +48,16 @@ _MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
 _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
+
+LIB_ARTIFACTS = ["libz.a"]
+INCLUDE_ARTIFACTS = ["zlib.h", "zconf.h"]
+TEST_ARTIFACTS = ["example.elf", "minigzip.elf"]
+NANVIX_ROOT = Path(__file__).resolve().parent
+OUT_DIR = NANVIX_ROOT / "out"
+DIST_DIR = NANVIX_ROOT / "dist"
+LIB_OUT = OUT_DIR / "build" / "lib"
+INCLUDE_OUT = OUT_DIR / "build" / "include"
+TEST_OUT = OUT_DIR / "test"
 
 
 class ZlibBuild(ZScript):
@@ -83,6 +95,9 @@ class ZlibBuild(ZScript):
             self.docker.translate_path(Path(sysroot)) if self.docker else Path(sysroot)
         )
 
+        def translate(p: Path):
+            return self.docker.translate_path(p) if self.docker else p
+
         args = [
             "make",
             "-f",
@@ -92,6 +107,15 @@ class ZlibBuild(ZScript):
             f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
             f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
             f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
+            f"LIB_ARTIFACTS={' '.join(LIB_ARTIFACTS)}",
+            f"INCLUDE_ARTIFACTS={' '.join(INCLUDE_ARTIFACTS)}",
+            f"TEST_ARTIFACTS={' '.join(TEST_ARTIFACTS)}",
+            f"NANVIX_ROOT={translate(NANVIX_ROOT)}",
+            f"OUT_DIR={translate(OUT_DIR)}",
+            f"DIST_DIR={translate(DIST_DIR)}",
+            f"LIB_OUT={translate(LIB_OUT)}",
+            f"INCLUDE_OUT={translate(INCLUDE_OUT)}",
+            f"TEST_OUT={translate(TEST_OUT)}",
         ]
 
         args.extend(targets)
@@ -103,7 +127,19 @@ class ZlibBuild(ZScript):
 
     def build(self) -> None:
         """Cross-compile libz.a for Nanvix."""
+        LIB_OUT.mkdir(exist_ok=True, parents=True)
+        INCLUDE_OUT.mkdir(exist_ok=True, parents=True)
+        TEST_OUT.mkdir(exist_ok=True, parents=True)
+
         run(*self._make_args("all"), cwd=self.repo_root, docker=self.docker)
+        # TODO: Make initramfs HERE and store it at TEST_OUT
+
+        for lib in LIB_ARTIFACTS:
+            shutil.move(self.repo_root / lib, LIB_OUT / lib)
+        for bin in TEST_ARTIFACTS:
+            shutil.move(self.repo_root / bin, TEST_OUT / bin)
+        for include in INCLUDE_ARTIFACTS:
+            shutil.copy2(self.repo_root / include, INCLUDE_OUT / include)
 
     def test(self) -> None:
         """Run the zlib test suite.
@@ -112,6 +148,15 @@ class ZlibBuild(ZScript):
         The functional test in standalone mode is handled in Python via
         make_initrd so that initrd creation is shared across platforms.
         """
+
+        for bin in TEST_ARTIFACTS:
+            if not (TEST_OUT / bin).is_file():
+                log.fatal(
+                    f"{bin} not found.",
+                    code=EXIT_MISSING_DEP,
+                    hint="Run ./z build first.",
+                )
+
         if IS_WINDOWS:
             self._run_tests_windows()
             return
@@ -128,22 +173,14 @@ class ZlibBuild(ZScript):
         Creates an initrd bundling example.elf with system daemons via
         make_initrd, and a ramfs providing /tmp for test file output.
         """
-        import tempfile
-
-        binary = self.repo_root / "example.elf"
-        if not binary.is_file():
-            log.fatal(
-                "example.elf not found.",
-                code=EXIT_MISSING_DEP,
-                hint="Run `./z build` first.",
-            )
-
         print("=== zlib functional tests ===")
         print("  Running example.elf via nanvixd standalone...")
 
         # Bundle example.elf + daemons into an initrd.
         initrd = make_initrd(
-            self, "example.elf", InitRdArgs(app_args=["tmp/zlib_test"])
+            self,
+            TEST_OUT / "example.elf",
+            InitRdArgs(app_args=["tmp/zlib_test"]),
         )
 
         # Build a ramfs with /tmp for test file output.
@@ -247,12 +284,9 @@ class ZlibBuild(ZScript):
 
         failed: list[str] = []
         for binary in test_binaries:
-            name = binary.stem
-            print(f"RUN  {name}...")
+            print(f"RUN  {binary.stem}...")
             # Bundle the test program in an initrd image.
-            initrd = make_initrd(
-                self, binary.name, InitRdArgs(app_args=["/tmp/zlib_test"])
-            )
+            initrd = make_initrd(self, binary, InitRdArgs(app_args=["/tmp/zlib_test"]))
             # Build a ramfs image with a /tmp directory for test output.
             with tempfile.TemporaryDirectory(prefix=f"nanvix_{name}_") as tmpdir:
                 tmpdir_path = Path(tmpdir)
