@@ -26,14 +26,15 @@ from nanvix_zutil import (
     run,
 )
 from nanvix_zutil.helpers import InitRdArgs
-
-#: Build artifacts produced inside the container that must be copied back
-#: to the host workspace so that `./z test` and `./z release` can find them.
-_BUILD_OUTPUT_FILES = [
-    "libz.a",
-    "example.elf",
-    "minigzip.elf",
-]
+from nanvix_zutil.paths import (
+    dist_dir,
+    include_out,
+    lib_out,
+    nanvix_root,
+    out_dir,
+    repo_root,
+    test_out,
+)
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -46,6 +47,10 @@ _MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
 _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
+
+LIB_ARTIFACTS = ["libz.a"]
+INCLUDE_ARTIFACTS = ["zlib.h", "zconf.h"]
+TEST_ARTIFACTS = ["example.elf", "minigzip.elf"]
 
 
 class ZlibBuild(ZScript):
@@ -63,7 +68,24 @@ class ZlibBuild(ZScript):
         workspace mount; otherwise `./z test` cannot find example.elf.
         """
         cfg = super().docker_config(image)
-        return dataclasses.replace(cfg, output_files=list(_BUILD_OUTPUT_FILES))
+        # Build artifacts produced inside the container that must be copied
+        # back to the host workspace so that `./z test` and `./z release`
+        # can find them. Paths are relative to the workspace mount root
+        # (i.e. repo_root()).
+        root = repo_root()
+        output_files = [
+            # In-tree build artifacts (legacy locations used by tests).
+            "libz.a",
+            "example.elf",
+            "minigzip.elf",
+            # Installed artifacts staged for `./z release` / packaging.
+            str((lib_out() / "libz.a").relative_to(root)),
+            str((include_out() / "zlib.h").relative_to(root)),
+            str((include_out() / "zconf.h").relative_to(root)),
+            str((test_out() / "example.elf").relative_to(root)),
+            str((test_out() / "minigzip.elf").relative_to(root)),
+        ]
+        return dataclasses.replace(cfg, output_files=output_files)
 
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list.
@@ -79,21 +101,29 @@ class ZlibBuild(ZScript):
                 code=EXIT_MISSING_DEP,
                 hint="Run `./z setup` first to download the sysroot.",
             )
-        sysroot_p = (
-            self.docker.translate_path(Path(sysroot)) if self.docker else Path(sysroot)
-        )
+
+        def translate(p: Path):
+            return self.docker.translate_path(p) if self.docker else p
 
         args = [
             "make",
             "-f",
             ".nanvix/Makefile.nanvix",
-            f"{_MAKE_VAR_HOME}={sysroot_p}",
+            f"{_MAKE_VAR_HOME}={translate(Path(sysroot))}",
             f"{_MAKE_VAR_TOOLCHAIN}={TOOLCHAIN_CONTAINER_PATH}",
             f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
             f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
             f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
+            f"LIB_ARTIFACTS={' '.join(LIB_ARTIFACTS)}",
+            f"INCLUDE_ARTIFACTS={' '.join(INCLUDE_ARTIFACTS)}",
+            f"TEST_ARTIFACTS={' '.join(TEST_ARTIFACTS)}",
+            f"NANVIX_ROOT={translate(nanvix_root())}",
+            f"OUT_DIR={translate(out_dir())}",
+            f"DIST_DIR={translate(dist_dir())}",
+            f"LIB_OUT={translate(lib_out())}",
+            f"INCLUDE_OUT={translate(include_out())}",
+            f"TEST_OUT={translate(test_out())}",
         ]
-
         args.extend(targets)
         return args
 
@@ -103,7 +133,7 @@ class ZlibBuild(ZScript):
 
     def build(self) -> None:
         """Cross-compile libz.a for Nanvix."""
-        run(*self._make_args("all"), cwd=self.repo_root, docker=self.docker)
+        run(*self._make_args("all"), cwd=repo_root(), docker=self.docker)
 
     def test(self) -> None:
         """Run the zlib test suite.
@@ -120,7 +150,7 @@ class ZlibBuild(ZScript):
             self._run_functional_standalone()
         else:
             targets = self.targets if self.targets else ["test"]
-            run(*self._make_args(*targets), cwd=self.repo_root)
+            run(*self._make_args(*targets), cwd=repo_root())
 
     def _run_functional_standalone(self) -> None:
         """Run the standalone functional test using make_initrd.
@@ -130,7 +160,7 @@ class ZlibBuild(ZScript):
         """
         import tempfile
 
-        binary = self.repo_root / "example.elf"
+        binary = repo_root() / "example.elf"
         if not binary.is_file():
             log.fatal(
                 "example.elf not found.",
@@ -143,7 +173,7 @@ class ZlibBuild(ZScript):
 
         # Bundle example.elf + daemons into an initrd.
         initrd = make_initrd(
-            self, "example.elf", InitRdArgs(app_args=["tmp/zlib_test"])
+            self, "example.elf", test=True, args=InitRdArgs(app_args=["tmp/zlib_test"])
         )
 
         # Build a ramfs with /tmp for test file output.
@@ -227,7 +257,7 @@ class ZlibBuild(ZScript):
         # for forward-compatibility in case a future Makefile change moves them.
         test_allowlist = {"example.elf"}
         test_binaries: list[Path] = []
-        for candidate in [self.repo_root, self.repo_root / "build"]:
+        for candidate in [repo_root(), repo_root() / "build"]:
             if candidate.is_dir():
                 elfs = sorted(candidate.glob("*.elf"))
                 found = [b for b in elfs if b.name in test_allowlist]
@@ -251,7 +281,10 @@ class ZlibBuild(ZScript):
             print(f"RUN  {name}...")
             # Bundle the test program in an initrd image.
             initrd = make_initrd(
-                self, binary.name, InitRdArgs(app_args=["/tmp/zlib_test"])
+                self,
+                binary.name,
+                test=True,
+                args=InitRdArgs(app_args=["/tmp/zlib_test"]),
             )
             # Build a ramfs image with a /tmp directory for test output.
             with tempfile.TemporaryDirectory(prefix=f"nanvix_{name}_") as tmpdir:
@@ -292,10 +325,10 @@ class ZlibBuild(ZScript):
             raise RuntimeError(f"{len(failed)} test(s) failed: {msg}")
         print(f"\t\t*** All {len(test_binaries)} tests PASSED ***")
 
-    def release(self) -> None:
-        """Package the zlib release tarball and verify it."""
-        run(*self._make_args("package"), cwd=self.repo_root)
-        run(*self._make_args("verify-package"), cwd=self.repo_root)
+    # def release(self) -> None:
+    #     """Package the zlib release tarball and verify it."""
+    #     run(*self._make_args("package"), cwd=repo_root())
+    #     run(*self._make_args("verify-package"), cwd=repo_root())
 
     def clean(self) -> None:
         """Remove build artifacts."""
@@ -304,7 +337,7 @@ class ZlibBuild(ZScript):
             "-f",
             ".nanvix/Makefile.nanvix",
             "clean",
-            cwd=self.repo_root,
+            cwd=repo_root(),
         )
 
 

@@ -23,11 +23,25 @@
 
 .DEFAULT_GOAL=all
 EXE = .elf
-_NANVIX_DOCKER_BUILD_GOALS := all example$(EXE) minigzip$(EXE)
+_NANVIX_DOCKER_BUILD_GOALS := all install example$(EXE) minigzip$(EXE)
 _NANVIX_GOALS := $(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))
 
 # Ensure required variables are defined
-_REQUIRED := PLATFORM PROCESS_MODE MEMORY_SIZE NANVIX_HOME NANVIX_TOOLCHAIN
+_REQUIRED := PLATFORM \
+    PROCESS_MODE \
+    MEMORY_SIZE \
+    NANVIX_HOME \
+    NANVIX_TOOLCHAIN \
+    NANVIX_ROOT \
+    OUT_DIR \
+    DIST_DIR \
+    LIB_OUT \
+    INCLUDE_OUT \
+    TEST_OUT \
+    TEST_ARTIFACTS \
+    INCLUDE_ARTIFACTS \
+    LIB_ARTIFACTS
+
 ifneq ($(filter-out clean,$(_NANVIX_GOALS)),)
   $(foreach v,$(_REQUIRED),\
     $(if $($v),,$(error Required variable $v not set))\
@@ -40,9 +54,7 @@ STATICLIB = libz.a
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
 OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
 OBJS = $(OBJZ) $(OBJG)
-TEST_PROGS = example$(EXE) minigzip$(EXE)
 SYSROOT_PATH := $(abspath $(NANVIX_HOME))
-RELEASE_ARTIFACTS := $(STATICLIB) zlib.h zconf.h
 
 # ===========================================================================
 # Build Mode Variables
@@ -76,7 +88,15 @@ NANVIX_LIBS := -Wl,--start-group \
 # Build Targets
 # ===========================================================================
 
-all: $(STATICLIB) $(TEST_PROGS)
+all: $(STATICLIB) $(TEST_ARTIFACTS) install
+
+# Stage built artifacts into the release/test output tree so that
+# `./z release` (which packages release_dir()) and `./z test` can find them.
+install: $(STATICLIB) $(TEST_ARTIFACTS)
+	@mkdir -p $(LIB_OUT) $(INCLUDE_OUT) $(TEST_OUT)
+	cp -f $(LIB_ARTIFACTS)     $(LIB_OUT)/
+	cp -f $(INCLUDE_ARTIFACTS) $(INCLUDE_OUT)/
+	cp -f $(TEST_ARTIFACTS)    $(TEST_OUT)/
 
 $(STATICLIB): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
@@ -92,10 +112,10 @@ test/minigzip.o: test/minigzip.c zlib.h zconf.h
 	$(CC) $(CFLAGS) -I. -c -o $@ $<
 
 example$(EXE): test/example.o $(STATICLIB)
-	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ test/example.o -L. -lz $(NANVIX_LIBS)
+	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ "test/example.o" -L. -lz $(NANVIX_LIBS)
 
 minigzip$(EXE): test/minigzip.o $(STATICLIB)
-	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ test/minigzip.o -L. -lz $(NANVIX_LIBS)
+	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ "test/minigzip.o" -L. -lz $(NANVIX_LIBS)
 
 # Source dependencies
 adler32.o: adler32.c zutil.h zlib.h zconf.h
@@ -125,7 +145,7 @@ ifeq ($(PROCESS_MODE),standalone)
 	@echo "  Standalone functional tests are handled by ./z test"
 else
 	@echo "  Running example$(EXE) via nanvixd$(EXE)..."
-	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath example$(EXE)) /tmp/zlib_test
+	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath $(TEST_OUT)/example$(EXE)) /tmp/zlib_test
 	@echo "  PASS: example test (exit code 0)"
 endif
 	@echo "  PASS: zlib functional tests"
@@ -141,18 +161,29 @@ test: test-functional
 package:
 	@echo "=== Packaging zlib release ==="
 	$(eval ARTIFACT_NAME := zlib-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
-	@for f in $(RELEASE_ARTIFACTS); do \
-		if [ ! -f "$$f" ]; then \
-			echo "  FAIL: Required artifact not found: $$f"; exit 1; \
-		fi; \
-	done
 	rm -rf dist/$(ARTIFACT_NAME)
 	mkdir -p dist/$(ARTIFACT_NAME)/sysroot/lib \
 		dist/$(ARTIFACT_NAME)/sysroot/include \
 		dist/$(ARTIFACT_NAME)/sysroot/bin
-	cp -f $(STATICLIB) dist/$(ARTIFACT_NAME)/sysroot/lib/
-	cp -f zlib.h zconf.h dist/$(ARTIFACT_NAME)/sysroot/include/
-	-cp -f $(TEST_PROGS) dist/$(ARTIFACT_NAME)/sysroot/bin/ 2>/dev/null || true
+	@for f in $(LIB_ARTIFACTS); do \
+		if [ ! -f "$(LIB_OUT)/$$f" ]; then \
+			echo "  FAIL: Required artifact not found: $(LIB_OUT)/$$f"; exit 1; \
+		fi; \
+		cp -f "$(LIB_OUT)/$$f" dist/$(ARTIFACT_NAME)/sysroot/lib; \
+	done
+	@for f in $(INCLUDE_ARTIFACTS); do \
+		if [ ! -f "$(INCLUDE_OUT)/$$f" ]; then \
+			echo "  FAIL: Required artifact not found: $(INCLUDE_OUT)/$$f"; exit 1; \
+		fi; \
+		cp -f "$(INCLUDE_OUT)/$$f" dist/$(ARTIFACT_NAME)/sysroot/include; \
+	done
+	@for f in $(TEST_ARTIFACTS); do \
+		if [ ! -f "$(TEST_OUT)/$$f" ]; then \
+            echo "  WARNING: Optional artifact $(TEST_OUT)/$$f not found (skipping): $$f"; \
+            continue; \
+		fi; \
+		cp -f "$(TEST_OUT)/$$f" dist/$(ARTIFACT_NAME)/sysroot/bin/; \
+	done
 	tar -czf dist/$(ARTIFACT_NAME).tar.gz -C dist/$(ARTIFACT_NAME) sysroot
 	@echo "  Package: dist/$(ARTIFACT_NAME).tar.gz"
 	@echo "  Contents:"
@@ -181,8 +212,7 @@ verify-package:
 # ===========================================================================
 
 clean:
-	rm -f *.o test/*.o *~ $(STATICLIB) $(TEST_PROGS)
-	rm -f *.a *$(EXE)
+	rm -rf $(OUT_DIR)
 	rm -rf dist/
 
-.PHONY: all clean test test-functional package verify-package
+.PHONY: all install clean test test-functional package verify-package
