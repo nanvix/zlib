@@ -195,6 +195,6 @@ All 12 platform configurations run in parallel with `fail-fast: false`.
 
 ## Limitations
 
-- **Static linking only.** Shared libraries (`libz.so`) are not supported on Nanvix.
+- **Shared library built manually.** `libz.so` is produced by linking the PIC static archive with `gcc -shared -Wl,--whole-archive`; the upstream `configure`/libtool shared-build path is not used (it does not support `i686-nanvix`).
 - **No `configure` step.** The upstream `./configure` script is not used. Build configuration is hardcoded in `.nanvix/Makefile.nanvix`.
 - **KVM required for functional tests.** The `test-functional` target needs `/dev/kvm` access to run `nanvixd.elf`.

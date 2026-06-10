@@ -51,7 +51,7 @@ _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 
-LIB_ARTIFACTS = ["libz.a"]
+LIB_ARTIFACTS = ["libz.a", "libz.so"]
 INCLUDE_ARTIFACTS = ["zlib.h", "zconf.h"]
 TEST_ARTIFACTS = ["example.elf", "minigzip.elf"]
 
@@ -79,10 +79,12 @@ class ZlibBuild(ZScript):
         output_files = [
             # In-tree build artifacts (legacy locations used by tests).
             "libz.a",
+            "libz.so",
             "example.elf",
             "minigzip.elf",
             # Installed artifacts staged for `./z release` / packaging.
             str((lib_out() / "libz.a").relative_to(root)),
+            str((lib_out() / "libz.so").relative_to(root)),
             str((include_out() / "zlib.h").relative_to(root)),
             str((include_out() / "zconf.h").relative_to(root)),
             str((test_out() / "example.elf").relative_to(root)),
@@ -135,7 +137,7 @@ class ZlibBuild(ZScript):
         return super().setup()
 
     def build(self) -> None:
-        """Cross-compile libz.a for Nanvix."""
+        """Cross-compile libz.a and libz.so for Nanvix."""
         run(*self._make_args("all"), cwd=repo_root(), docker=self.docker)
 
     def test(self) -> None:
