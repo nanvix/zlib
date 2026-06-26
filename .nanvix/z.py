@@ -71,14 +71,10 @@ class ZlibBuild(ZScript):
         # Build artifacts produced inside the container that must be copied
         # back to the host workspace so that `./z test` and `./z release`
         # can find them. Paths are relative to the workspace mount root
-        # (i.e. repo_root()).
+        # (i.e. repo_root()). Everything `./z test` needs lives under
+        # `test_out()`; release/packaging picks up `lib_out()`/`include_out()`.
         root = repo_root()
         output_files = [
-            # In-tree build artifacts (legacy locations used by tests).
-            "libz.a",
-            "example.elf",
-            "minigzip.elf",
-            # Installed artifacts staged for `./z release` / packaging.
             str((lib_out() / "libz.a").relative_to(root)),
             str((include_out() / "zlib.h").relative_to(root)),
             str((include_out() / "zconf.h").relative_to(root)),
@@ -157,13 +153,15 @@ class ZlibBuild(ZScript):
 
         Creates an initrd bundling example.elf with system daemons via
         make_initrd, and a ramfs providing /tmp for test file output.
+        The test ELF is consumed from ``test_out()``, which is the sole
+        source of test artifacts produced by ``./z build``.
         """
         import tempfile
 
-        binary = repo_root() / "example.elf"
+        binary = test_out() / "example.elf"
         if not binary.is_file():
             log.fatal(
-                "example.elf not found.",
+                f"{binary} not found.",
                 code=EXIT_MISSING_DEP,
                 hint="Run `./z build` first.",
             )
@@ -173,7 +171,10 @@ class ZlibBuild(ZScript):
 
         # Bundle example.elf + daemons into an initrd.
         initrd = make_initrd(
-            self, "example.elf", test=True, args=InitRdArgs(app_args=["tmp/zlib_test"])
+            self,
+            binary,
+            test_out(),
+            args=InitRdArgs(app_args=["tmp/zlib_test"]),
         )
 
         # Build a ramfs with /tmp for test file output.
@@ -218,9 +219,9 @@ class ZlibBuild(ZScript):
         """Run tests natively on Windows.
 
         Only standalone mode is tested on Windows; multi-process and
-        single-process require linuxd, which is Linux-only. Standalone
-        test binaries are discovered in the repository root, where the
-        Makefile emits the ELF outputs, rather than under `build/`.
+        single-process require linuxd, which is Linux-only. Test ELFs
+        are consumed from ``test_out()`` -- the canonical staging area
+        populated by ``./z build``.
         """
         if self.config.deployment_mode != "standalone":
             print(
@@ -252,26 +253,17 @@ class ZlibBuild(ZScript):
                 hint="Run `./z setup` first.",
             )
 
-        # The Makefile outputs ELFs directly to the repository root, not to a
-        # build/ subdirectory.  Search the repo root first; fall back to build/
-        # for forward-compatibility in case a future Makefile change moves them.
-        test_allowlist = {"example.elf"}
-        test_binaries: list[Path] = []
-        for candidate in [repo_root(), repo_root() / "build"]:
-            if candidate.is_dir():
-                elfs = sorted(candidate.glob("*.elf"))
-                found = [b for b in elfs if b.name in test_allowlist]
-                for b in found:
-                    if b.name not in {x.name for x in test_binaries}:
-                        test_binaries.append(b)
-
-        if not test_binaries:
-            expected = ", ".join(sorted(test_allowlist))
+        # Test ELFs are sourced exclusively from ``test_out()``; the
+        # build stages everything ``./z test`` needs into that directory.
+        test_out_dir = test_out()
+        binary = test_out_dir / "example.elf"
+        if not binary.is_file():
             log.fatal(
-                f"No allowlisted test binaries found. Expected: {expected}.",
+                f"{binary} not found.",
                 code=EXIT_MISSING_DEP,
                 hint="Build the test binaries first (for example, run `./z build`) and then rerun `./z test`.",
             )
+        test_binaries: list[Path] = [binary]
 
         import tempfile
 
@@ -282,8 +274,8 @@ class ZlibBuild(ZScript):
             # Bundle the test program in an initrd image.
             initrd = make_initrd(
                 self,
-                binary.name,
-                test=True,
+                binary,
+                test_out_dir,
                 args=InitRdArgs(app_args=["/tmp/zlib_test"]),
             )
             # Build a ramfs image with a /tmp directory for test output.
