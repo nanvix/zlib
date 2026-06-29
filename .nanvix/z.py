@@ -252,12 +252,14 @@ class ZlibBuild(ZScript):
                 hint="Run `./z setup` first.",
             )
 
-        # The Makefile outputs ELFs directly to the repository root, not to a
-        # build/ subdirectory.  Search the repo root first; fall back to build/
-        # for forward-compatibility in case a future Makefile change moves them.
+        # Search `test_out()` (`.nanvix/out/test/`), which is the contract
+        # location both for Linux installs and for the windows-ci artifact
+        # overlay (see `_stage_artifacts_elf_so` in nanvix_scripts). Fall
+        # back to the repo root and `build/` for robustness against future
+        # Makefile changes.
         test_allowlist = {"example.elf"}
         test_binaries: list[Path] = []
-        for candidate in [repo_root(), repo_root() / "build"]:
+        for candidate in [test_out(), repo_root(), repo_root() / "build"]:
             if candidate.is_dir():
                 elfs = sorted(candidate.glob("*.elf"))
                 found = [b for b in elfs if b.name in test_allowlist]
@@ -275,10 +277,21 @@ class ZlibBuild(ZScript):
 
         import tempfile
 
+        import shutil
+
         failed: list[str] = []
         for binary in test_binaries:
             name = binary.stem
             print(f"RUN  {name}...")
+            # make_initrd reads the app ELF from `repo_root() / <name>`
+            # (hardcoded in nanvix_zutil.helpers). The windows-ci overlay
+            # only stages artifacts under `test_out()`, so copy the binary
+            # up to the repo root if it isn't already there.
+            staged = repo_root() / binary.name
+            staged_created = False
+            if binary.resolve() != staged.resolve():
+                shutil.copy2(binary, staged)
+                staged_created = True
             # Bundle the test program in an initrd image.
             initrd = make_initrd(
                 self,
@@ -319,6 +332,8 @@ class ZlibBuild(ZScript):
                 finally:
                     if initrd.exists():
                         initrd.unlink()
+                    if staged_created:
+                        staged.unlink(missing_ok=True)
 
         if failed:
             msg = " ".join(failed)
