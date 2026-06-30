@@ -173,7 +173,10 @@ class ZlibBuild(ZScript):
 
         # Bundle example.elf + daemons into an initrd.
         initrd = make_initrd(
-            self, "example.elf", test=True, args=InitRdArgs(app_args=["tmp/zlib_test"])
+            self,
+            repo_root() / "example.elf",
+            test_out(),
+            args=InitRdArgs(app_args=["tmp/zlib_test"]),
         )
 
         # Build a ramfs with /tmp for test file output.
@@ -295,8 +298,8 @@ class ZlibBuild(ZScript):
             # Bundle the test program in an initrd image.
             initrd = make_initrd(
                 self,
-                binary.name,
-                test=True,
+                staged,
+                test_out(),
                 args=InitRdArgs(app_args=["/tmp/zlib_test"]),
             )
             # Build a ramfs image with a /tmp directory for test output.
