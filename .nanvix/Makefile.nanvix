@@ -48,7 +48,13 @@ ifneq ($(filter-out clean,$(_NANVIX_GOALS)),)
   )
 endif
 
-CFLAGS = -O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse
+# Native Nanvix cross-compilation target provided by the LLVM toolchain image.
+# clang is configured for `i686-unknown-nanvix`: it uses the toolchain's Nanvix
+# sysroot for system headers and (at link time) pulls in crt0.o, libc, libm and
+# the compiler-rt builtins from it automatically. `-march=pentiumpro` pins the
+# SSE-less i686 guest ABI.
+NANVIX_TARGET := i686-unknown-nanvix
+CFLAGS = --target=$(NANVIX_TARGET) -march=pentiumpro -O2 -Wall
 ARFLAGS = rc
 STATICLIB = libz.a
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
@@ -68,26 +74,25 @@ ifneq ($(_BUILD),)
     $(error Cannot mix build and non-build targets. Build targets: $(_NANVIX_DOCKER_BUILD_GOALS))
   endif
 
-  ifeq ($(wildcard $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc),)
-      $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN))
+  ifeq ($(wildcard $(NANVIX_TOOLCHAIN)/bin/clang),)
+      $(error Nanvix LLVM toolchain (clang) not found at $(NANVIX_TOOLCHAIN))
   endif
 endif
 
-CC := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc
-AR := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ar
-RANLIB := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ranlib
-# Since Nanvix 0.16.19, process startup (`_start`) lives in libnvx_crt0.a; it
-# drives `__nanvix_libc_start_main` in libposix.a. It must be linked first so
-# its strong `_start` overrides the toolchain's weak no-op stub (otherwise the
-# guest never reaches main and hangs). libnvx_crt0.a and libposix.a share some
-# kcall objects, so allow multiple definitions to resolve the overlap.
-NANVIX_LDFLAGS := -T$(SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack -Wl,--allow-multiple-definition
-NANVIX_LIBS := -Wl,--start-group \
-  $(SYSROOT_PATH)/lib/libnvx_crt0.a \
-  $(SYSROOT_PATH)/lib/libposix.a \
-  $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libc.a \
-  $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libm.a \
-  -Wl,--end-group
+CC := $(NANVIX_TOOLCHAIN)/bin/clang
+AR := $(NANVIX_TOOLCHAIN)/bin/llvm-ar
+RANLIB := $(NANVIX_TOOLCHAIN)/bin/llvm-ranlib
+# Guest link, driven by clang for the Nanvix target. clang auto-links the
+# startup object (crt0.o), the C/math libraries and the compiler-rt builtins
+# from the toolchain sysroot; only the Nanvix-specific bits are supplied here:
+#   * `-T user.ld` — the guest linker script (BASE_ADDR 0x40000000; it also
+#     defines runtime symbols such as `__TLS_START`), without which the link
+#     fails with undefined-symbol errors.
+#   * `--entry=_do_start` — the crt0 entry point.
+#   * `-z muldefs` — crt0.o and libc.a share some low-level objects (both
+#     define, e.g., `fork_save_context`), so allow multiple definitions.
+NANVIX_LD_SCRIPT := $(NANVIX_TOOLCHAIN)/lib/user.ld
+NANVIX_LDFLAGS = --target=$(NANVIX_TARGET) -Wl,-z,noexecstack -Wl,-z,muldefs -Wl,-T,$(NANVIX_LD_SCRIPT) -Wl,--entry=_do_start
 
 
 # ===========================================================================
@@ -118,10 +123,10 @@ test/minigzip.o: test/minigzip.c zlib.h zconf.h
 	$(CC) $(CFLAGS) -I. -c -o $@ $<
 
 example$(EXE): test/example.o $(STATICLIB)
-	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ "test/example.o" -L. -lz $(NANVIX_LIBS)
+	$(CC) $(NANVIX_LDFLAGS) -o $@ "test/example.o" -L. -lz
 
 minigzip$(EXE): test/minigzip.o $(STATICLIB)
-	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ "test/minigzip.o" -L. -lz $(NANVIX_LIBS)
+	$(CC) $(NANVIX_LDFLAGS) -o $@ "test/minigzip.o" -L. -lz
 
 # Source dependencies
 adler32.o: adler32.c zutil.h zlib.h zconf.h
@@ -145,15 +150,12 @@ zutil.o: zutil.c zutil.h zlib.h zconf.h
 # ===========================================================================
 
 # --- Functional tests: run example.elf on nanvixd$(EXE) ---
+# Only the standalone deployment mode is supported. The standalone functional
+# test (initrd + ramfs) is driven from Python by `./z test` (see .nanvix/z.py),
+# so this target is a thin stub kept for `make test` compatibility.
 test-functional:
 	@echo "=== zlib functional tests ==="
-ifeq ($(PROCESS_MODE),standalone)
 	@echo "  Standalone functional tests are handled by ./z test"
-else
-	@echo "  Running example$(EXE) via nanvixd$(EXE)..."
-	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath $(TEST_OUT)/example$(EXE)) /tmp/zlib_test
-	@echo "  PASS: example test (exit code 0)"
-endif
 	@echo "  PASS: zlib functional tests"
 
 # --- Run all test levels ---

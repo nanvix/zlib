@@ -53,14 +53,15 @@ No other `.c` or `.h` files were modified. The compression algorithms, public AP
 
 | Component | Value |
 | --------- | ----- |
-| Compiler | `i686-nanvix-gcc` |
-| Archiver | `i686-nanvix-ar` |
-| Ranlib | `i686-nanvix-ranlib` |
-| Docker image | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` |
-| CFLAGS | `-O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse` |
-| LDFLAGS | `-T user.ld -static -Wl,-z,noexecstack` |
+| Compiler | `clang --target=i686-unknown-nanvix` |
+| Linker | `clang` (drives `ld.lld`) |
+| Archiver | `llvm-ar` |
+| Ranlib | `llvm-ranlib` |
+| Docker image | `ghcr.io/nanvix/llvm-project:ca7933e47d3a` |
+| CFLAGS | `--target=i686-unknown-nanvix -march=pentiumpro -O2 -Wall` |
+| LDFLAGS | `--target=i686-unknown-nanvix -Wl,-z,noexecstack -Wl,-z,muldefs -Wl,-T,user.ld -Wl,--entry=_do_start` |
 
-The Makefile auto-detects the toolchain. If the native cross-compiler is not found at `NANVIX_TOOLCHAIN` (default `/opt/nanvix`), it falls back to Docker automatically.
+The toolchain is the Nanvix LLVM toolchain, with `clang` configured for the native `i686-unknown-nanvix` target. clang uses the toolchain's Nanvix sysroot for system headers and, at link time, automatically pulls in the startup object (`crt0.o`), the C/math libraries and the compiler-rt builtins. Only the Nanvix-specific link bits are supplied explicitly: the guest linker script (`-T user.ld`), the crt0 entry point (`--entry=_do_start`), and `-z muldefs` (crt0.o and libc.a share some low-level objects). The Makefile auto-detects the toolchain. If the native cross-compiler is not found at `NANVIX_TOOLCHAIN` (default `/opt/nanvix`), it falls back to Docker automatically.
 
 ### Build Outputs
 
@@ -72,13 +73,15 @@ The Makefile auto-detects the toolchain. If the native cross-compiler is not fou
 
 ### Link Dependencies
 
-All executables are statically linked against:
+Executables are statically linked. clang resolves the following from the toolchain sysroot automatically; only `libz.a` is supplied by this build:
 
 - `libz.a` — this library
-- `libposix.a` — from Nanvix sysroot at `$NANVIX_HOME/lib/`
-- `libc.a` — from Nanvix toolchain
-- `libm.a` — from Nanvix toolchain
-- `user.ld` — linker script from Nanvix sysroot at `$NANVIX_HOME/lib/`
+- `crt0.o` — process startup (entry `_do_start`), from the toolchain sysroot
+- `libc.a` — from the toolchain sysroot
+- `libm.a` — from the toolchain sysroot
+- `libclang_rt.builtins-i386.a` — compiler-rt builtins, from the toolchain sysroot
+- `user.ld` — guest linker script, from the toolchain sysroot at `$NANVIX_TOOLCHAIN/lib/`
+
 
 ## Quick Start
 
@@ -100,7 +103,7 @@ Override the pinned nanvix-zutil version with `NANVIX_ZUTIL_VERSION=<version>`.
 
 ```bash
 # Pull the Docker image
-docker pull ghcr.io/nanvix/toolchain-gcc:sha-34a3641
+docker pull ghcr.io/nanvix/llvm-project:ca7933e47d3a
 
 # Download Nanvix sysroot
 curl -fsSL https://raw.githubusercontent.com/nanvix/nanvix/refs/heads/dev/scripts/get-nanvix.sh \
@@ -118,8 +121,8 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" test
 ### Option C: Native toolchain (no Docker)
 
 ```bash
-export NANVIX_TOOLCHAIN=/path/to/toolchain   # Must contain bin/i686-nanvix-gcc
-export NANVIX_HOME=/path/to/nanvix/sysroot   # Must contain lib/user.ld, lib/libposix.a
+export NANVIX_TOOLCHAIN=/path/to/toolchain   # Must contain bin/clang and lib/user.ld
+export NANVIX_HOME=/path/to/nanvix/sysroot   # Runtime sysroot (bin/nanvixd.elf) used by `test`
 make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 ```
 
@@ -128,13 +131,13 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `CONFIG_NANVIX` | *(required)* | Must be set to enable Nanvix build (recommended `y`) |
-| `NANVIX_HOME` | `$HOME/nanvix` | Path to Nanvix sysroot (must contain `lib/user.ld`) |
-| `NANVIX_TOOLCHAIN` | `/opt/nanvix` | Path to cross-compiler (must contain `bin/i686-nanvix-gcc`) |
+| `NANVIX_HOME` | `$HOME/nanvix` | Path to Nanvix runtime sysroot (provides `bin/nanvixd.elf` for `test`) |
+| `NANVIX_TOOLCHAIN` | `/opt/nanvix` | Path to cross-compiler (must contain `bin/clang` and `lib/user.ld`) |
 | `CONFIG_NANVIX_DOCKER` | *(auto)* | Set to `y` to force Docker even when native toolchain exists |
-| `NANVIX_DOCKER_IMAGE` | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` | Docker image for cross-compilation |
+| `NANVIX_DOCKER_IMAGE` | `ghcr.io/nanvix/llvm-project:ca7933e47d3a` | Docker image for cross-compilation |
 | `PLATFORM` | `unknown` | Target platform name (`microvm`, `hyperlight`) |
-| `PROCESS_MODE` | `unknown` | Deployment mode (`multi-process`, `single-process`, `standalone`) |
-| `MEMORY_SIZE` | `unknown` | Memory configuration (`128mb`, `256mb`) |
+| `PROCESS_MODE` | `unknown` | Deployment mode (`standalone`) |
+| `MEMORY_SIZE` | `unknown` | Memory configuration (`256mb`) |
 | `PREFIX` | `$NANVIX_HOME` | Install prefix for `make install` |
 | `DESTDIR` | *(empty)* | Staging directory prefix for `make install` |
 
@@ -142,11 +145,9 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 
 | Target | Description |
 | ------ | ----------- |
-| `all` | Build `libz.a` (default target) |
-| `test` | Run all test levels (smoke + integration + functional) |
-| `test-smoke` | Verify build artifacts exist and are valid (no runtime) |
-| `test-integration` | Build and link test executables |
-| `test-functional` | Execute `example.elf` on `nanvixd.elf` (requires KVM) |
+| `all` | Build `libz.a` and the test executables (default target) |
+| `test` | Run functional test checks (the standalone run is driven by `./z test`) |
+| `test-functional` | Stub for `make test`; `./z test` drives the standalone run |
 | `package` | Create release tarball in `dist/` |
 | `verify-package` | Validate the release tarball contents |
 | `install` | Install library and headers to `PREFIX` |
@@ -154,17 +155,15 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 
 ## Testing
 
-Tests are organized in three levels:
+Only the `standalone` deployment mode is supported. `./z test` runs the
+standalone functional test: it boots `example.elf` inside the Nanvix runtime via
+`nanvixd.elf`, bundling it with the guest daemons in an initrd and providing a
+RAM filesystem (`mkramfs.elf`) for the test's file output. The test asserts a
+guest exit code of 0 and requires KVM access on Linux.
 
-1. **Smoke** (`test-smoke`) — Checks that `libz.a`, `zlib.h`, and `zconf.h` exist and that the library is non-trivially sized. No runtime environment needed.
-2. **Integration** (`test-integration`) — Builds `example.elf` and `minigzip.elf`, verifying that they link successfully against the Nanvix sysroot.
-3. **Functional** (`test-functional`) — Runs `example.elf` inside the Nanvix runtime via `nanvixd.elf`. Requires KVM access. In `standalone` process mode, a RAM filesystem image is created with `mkramfs.elf`.
-
-Run specific levels:
-
-```bash
-./z test -- test-smoke test-integration
-```
+Alongside it, the build itself covers two cheaper levels: a **smoke** check that
+`libz.a`, `zlib.h`, and `zconf.h` are produced, and an **integration** check
+that `example.elf` and `minigzip.elf` link against the Nanvix toolchain.
 
 ## Platform Configurations
 
@@ -173,10 +172,10 @@ Defined in `.nanvix/nanvix.toml` and used by CI:
 | Axis | Values |
 | ---- | ------ |
 | Platform | `hyperlight`, `microvm` |
-| Process mode | `multi-process`, `single-process`, `standalone` |
-| Memory size | `128mb`, `256mb` |
+| Process mode | `standalone` |
+| Memory size | `256mb` |
 
-All combinations (2 x 3 x 2 = 12) are built and tested in CI.
+All combinations (2 x 1 x 1 = 2) are built and tested in CI.
 
 ## CI/CD
 
@@ -191,7 +190,7 @@ Uses the reusable workflow `nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.
 | Schedule | Daily at 09:00 UTC |
 | Manual | `workflow_dispatch` |
 
-All 12 platform configurations run in parallel with `fail-fast: false`.
+All 2 platform configurations run in parallel with `fail-fast: false`.
 
 ## Limitations
 

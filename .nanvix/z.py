@@ -17,6 +17,7 @@ from pathlib import Path
 
 from nanvix_zutil import (
     CFG_SYSROOT,
+    EXIT_INVALID_ARGS,
     EXIT_MISSING_DEP,
     TOOLCHAIN_CONTAINER_PATH,
     DockerConfig,
@@ -39,7 +40,7 @@ from nanvix_zutil.paths import (
 IS_WINDOWS = sys.platform == "win32"
 
 #: Docker image for cross-compiling Nanvix targets.
-NANVIX_DOCKER_IMAGE = "ghcr.io/nanvix/toolchain-gcc:sha-34a3641"
+NANVIX_DOCKER_IMAGE = "ghcr.io/nanvix/llvm-project:ca7933e47d3a"
 
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_HOME = "NANVIX_HOME"
@@ -131,26 +132,38 @@ class ZlibBuild(ZScript):
         """Download the Nanvix sysroot."""
         return super().setup()
 
+    def _require_standalone(self) -> None:
+        """Reject unsupported deployment modes.
+
+        Support for the ``multi-process`` and ``single-process`` modes was
+        removed; the Nanvix zlib port targets the ``standalone`` mode only.
+        """
+        mode = self.config.deployment_mode
+        if mode != "standalone":
+            log.fatal(
+                f"Unsupported deployment mode '{mode}': the zlib port supports "
+                "the 'standalone' mode only.",
+                code=EXIT_INVALID_ARGS,
+                hint="Set NANVIX_DEPLOYMENT_MODE=standalone (the default).",
+            )
+
     def build(self) -> None:
-        """Cross-compile libz.a for Nanvix."""
+        """Cross-compile libz.a for Nanvix (standalone mode only)."""
+        self._require_standalone()
         run(*self._make_args("all"), cwd=repo_root(), docker=self.docker)
 
     def test(self) -> None:
-        """Run the zlib test suite.
+        """Run the zlib standalone functional test.
 
-        Smoke and integration tests are always delegated to the Makefile.
-        The functional test in standalone mode is handled in Python via
-        make_initrd so that initrd creation is shared across platforms.
+        Only the standalone deployment mode is supported. The functional test
+        is handled in Python via make_initrd so that initrd creation is shared
+        across platforms.
         """
+        self._require_standalone()
         if IS_WINDOWS:
             self._run_tests_windows()
             return
-
-        if self.config.deployment_mode == "standalone":
-            self._run_functional_standalone()
-        else:
-            targets = self.targets if self.targets else ["test"]
-            run(*self._make_args(*targets), cwd=repo_root())
+        self._run_functional_standalone()
 
     def _run_functional_standalone(self) -> None:
         """Run the standalone functional test using make_initrd.
@@ -218,19 +231,11 @@ class ZlibBuild(ZScript):
         print("=== All zlib tests PASSED ===")
 
     def _run_tests_windows(self) -> None:
-        """Run tests natively on Windows.
+        """Run the standalone functional test natively on Windows.
 
-        Only standalone mode is tested on Windows; multi-process and
-        single-process require linuxd, which is Linux-only. Standalone
-        test binaries are discovered in the repository root, where the
-        Makefile emits the ELF outputs, rather than under `build/`.
+        Standalone test binaries are discovered in the repository root, where
+        the Makefile emits the ELF outputs, rather than under `build/`.
         """
-        if self.config.deployment_mode != "standalone":
-            print(
-                f"Skipping tests on Windows for mode '{self.config.deployment_mode}' (requires linuxd)."
-            )
-            return
-
         # --- standalone: full functional test via nanvixd.exe ---
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:
