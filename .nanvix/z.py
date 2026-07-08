@@ -280,25 +280,14 @@ class ZlibBuild(ZScript):
 
         import tempfile
 
-        import shutil
-
         failed: list[str] = []
         for binary in test_binaries:
             name = binary.stem
             print(f"RUN  {name}...")
-            # make_initrd reads the app ELF from `repo_root() / <name>`
-            # (hardcoded in nanvix_zutil.helpers). The windows-ci overlay
-            # only stages artifacts under `test_out()`, so copy the binary
-            # up to the repo root if it isn't already there.
-            staged = repo_root() / binary.name
-            staged_created = False
-            if binary.resolve() != staged.resolve():
-                shutil.copy2(binary, staged)
-                staged_created = True
             # Bundle the test program in an initrd image.
             initrd = make_initrd(
                 self,
-                staged,
+                binary,
                 test_out(),
                 args=InitRdArgs(app_args=["/tmp/zlib_test"]),
             )
@@ -335,8 +324,6 @@ class ZlibBuild(ZScript):
                 finally:
                     if initrd.exists():
                         initrd.unlink()
-                    if staged_created:
-                        staged.unlink(missing_ok=True)
 
         if failed:
             msg = " ".join(failed)
