@@ -138,19 +138,15 @@ class ZlibBuild(ZScript):
     def test(self) -> None:
         """Run the zlib test suite.
 
-        Smoke and integration tests are always delegated to the Makefile.
-        The functional test in standalone mode is handled in Python via
-        make_initrd so that initrd creation is shared across platforms.
+        Only standalone deployment mode is supported. The functional test is
+        handled in Python via make_initrd so that initrd creation is shared
+        across platforms.
         """
         if IS_WINDOWS:
             self._run_tests_windows()
             return
 
-        if self.config.deployment_mode == "standalone":
-            self._run_functional_standalone()
-        else:
-            targets = self.targets if self.targets else ["test"]
-            run(*self._make_args(*targets), cwd=repo_root())
+        self._run_functional_standalone()
 
     def _run_functional_standalone(self) -> None:
         """Run the standalone functional test using make_initrd.
@@ -220,17 +216,10 @@ class ZlibBuild(ZScript):
     def _run_tests_windows(self) -> None:
         """Run tests natively on Windows.
 
-        Only standalone mode is tested on Windows; multi-process and
-        single-process require linuxd, which is Linux-only. Standalone
-        test binaries are discovered in the repository root, where the
-        Makefile emits the ELF outputs, rather than under `build/`.
+        Only standalone deployment mode is supported. Standalone test binaries
+        are discovered in the repository root, where the Makefile emits the ELF
+        outputs, rather than under `build/`.
         """
-        if self.config.deployment_mode != "standalone":
-            print(
-                f"Skipping tests on Windows for mode '{self.config.deployment_mode}' (requires linuxd)."
-            )
-            return
-
         # --- standalone: full functional test via nanvixd.exe ---
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:

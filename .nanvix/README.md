@@ -133,7 +133,7 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 | `CONFIG_NANVIX_DOCKER` | *(auto)* | Set to `y` to force Docker even when native toolchain exists |
 | `NANVIX_DOCKER_IMAGE` | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` | Docker image for cross-compilation |
 | `PLATFORM` | `unknown` | Target platform name (`microvm`, `hyperlight`) |
-| `PROCESS_MODE` | `unknown` | Deployment mode (`multi-process`, `single-process`, `standalone`) |
+| `PROCESS_MODE` | `unknown` | Deployment mode (`standalone`) |
 | `MEMORY_SIZE` | `unknown` | Memory configuration (`128mb`, `256mb`) |
 | `PREFIX` | `$NANVIX_HOME` | Install prefix for `make install` |
 | `DESTDIR` | *(empty)* | Staging directory prefix for `make install` |
@@ -158,7 +158,7 @@ Tests are organized in three levels:
 
 1. **Smoke** (`test-smoke`) — Checks that `libz.a`, `zlib.h`, and `zconf.h` exist and that the library is non-trivially sized. No runtime environment needed.
 2. **Integration** (`test-integration`) — Builds `example.elf` and `minigzip.elf`, verifying that they link successfully against the Nanvix sysroot.
-3. **Functional** (`test-functional`) — Runs `example.elf` inside the Nanvix runtime via `nanvixd.elf`. Requires KVM access. In `standalone` process mode, a RAM filesystem image is created with `mkramfs.elf`.
+3. **Functional** (`test-functional`) — Runs `example.elf` inside the Nanvix runtime via `nanvixd.elf`. Requires KVM access. A RAM filesystem image is created with `mkramfs.elf` to provide `/tmp` for test file output.
 
 Run specific levels:
 
@@ -173,10 +173,10 @@ Defined in `.nanvix/nanvix.toml` and used by CI:
 | Axis | Values |
 | ---- | ------ |
 | Platform | `hyperlight`, `microvm` |
-| Process mode | `multi-process`, `single-process`, `standalone` |
+| Process mode | `standalone` |
 | Memory size | `128mb`, `256mb` |
 
-All combinations (2 x 3 x 2 = 12) are built and tested in CI.
+All combinations (2 x 1 x 2 = 4) are built and tested in CI.
 
 ## CI/CD
 
@@ -191,7 +191,7 @@ Uses the reusable workflow `nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.
 | Schedule | Daily at 09:00 UTC |
 | Manual | `workflow_dispatch` |
 
-All 12 platform configurations run in parallel with `fail-fast: false`.
+All 4 platform configurations run in parallel with `fail-fast: false`.
 
 ## Limitations
 

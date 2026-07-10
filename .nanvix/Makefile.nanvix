@@ -1,13 +1,15 @@
 # Copyright(c) The Maintainers of Nanvix.
 # Licensed under the MIT License.
 #
-# Usage: make -f .nanvix/Makefile.nanvix PLATFORM=<platform> PROCESS_MODE=<mode> \
+# Usage: make -f .nanvix/Makefile.nanvix PLATFORM=<platform> PROCESS_MODE=standalone \
 #    MEMORY_SIZE=<size> NANVIX_HOME=<home> NANVIX_TOOLCHAIN=<toolchain> [target]
+#
+# Only the standalone deployment mode is supported.
 #
 # Targets:
 #   all: Build static library and test programs
 #   test: Run functional tests
-#   test-functional: Run example.elf on nanvixd$(EXE)
+#   test-functional: Standalone functional tests are handled by ./z test
 #   package: Create a release tarball with build artifacts and headers
 #   verify-package: Verify the contents of the release tarball
 #   clean: Remove build artifacts and test executables
@@ -144,16 +146,10 @@ zutil.o: zutil.c zutil.h zlib.h zconf.h
 # Test Targets
 # ===========================================================================
 
-# --- Functional tests: run example.elf on nanvixd$(EXE) ---
+# --- Functional tests: standalone tests are handled by ./z test ---
 test-functional:
 	@echo "=== zlib functional tests ==="
-ifeq ($(PROCESS_MODE),standalone)
 	@echo "  Standalone functional tests are handled by ./z test"
-else
-	@echo "  Running example$(EXE) via nanvixd$(EXE)..."
-	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath $(TEST_OUT)/example$(EXE)) /tmp/zlib_test
-	@echo "  PASS: example test (exit code 0)"
-endif
 	@echo "  PASS: zlib functional tests"
 
 # --- Run all test levels ---
