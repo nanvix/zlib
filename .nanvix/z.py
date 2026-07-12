@@ -39,7 +39,10 @@ from nanvix_zutil.paths import (
 IS_WINDOWS = sys.platform == "win32"
 
 #: Docker image for cross-compiling Nanvix targets.
-NANVIX_DOCKER_IMAGE = "ghcr.io/nanvix/toolchain-gcc:sha-34a3641"
+NANVIX_DOCKER_IMAGE = (
+    "ghcr.io/nanvix/nanvix-sdk-c-clang"
+    "@sha256:f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f"
+)
 
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_HOME = "NANVIX_HOME"
@@ -55,6 +58,19 @@ TEST_ARTIFACTS = ["example.elf", "minigzip.elf"]
 
 class ZlibBuild(ZScript):
     """Build script for nanvix/zlib."""
+
+    # Build-time headers, libraries, startup objects, and linker scripts come
+    # from the SDK. The downloaded sysroot is used only to run tests.
+    SYSROOT_REQUIRED_FILES = (
+        "bin/nanvixd.elf",
+        "bin/kernel.elf",
+        "bin/mkramfs.elf",
+    )
+    SYSROOT_REQUIRED_FILES_WINDOWS = (
+        "bin/nanvixd.exe",
+        "bin/kernel.elf",
+        "bin/mkramfs.exe",
+    )
 
     def docker_image(self) -> str:
         """Return the default Docker image for cross-compilation."""
