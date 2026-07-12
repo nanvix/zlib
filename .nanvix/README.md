@@ -53,14 +53,15 @@ No other `.c` or `.h` files were modified. The compression algorithms, public AP
 
 | Component | Value |
 | --------- | ----- |
-| Compiler | `i686-nanvix-gcc` |
-| Archiver | `i686-nanvix-ar` |
-| Ranlib | `i686-nanvix-ranlib` |
-| Docker image | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` |
+| Compiler | `clang` |
+| Archiver | `llvm-ar` |
+| Ranlib | `llvm-ranlib` |
+| Docker image | `ghcr.io/nanvix/nanvix-sdk-c-clang@sha256:f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f` |
 | CFLAGS | `-O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse` |
-| LDFLAGS | `-T user.ld -static -Wl,-z,noexecstack` |
+| LDFLAGS | `-Wl,-z,noexecstack` |
 
-The Makefile auto-detects the toolchain. If the native cross-compiler is not found at `NANVIX_TOOLCHAIN` (default `/opt/nanvix`), it falls back to Docker automatically.
+The Makefile uses the Nanvix SDK at `NANVIX_TOOLCHAIN` (default `/opt/nanvix`).
+The SDK compiler defaults to `i686-unknown-nanvix`.
 
 ### Build Outputs
 
@@ -72,13 +73,13 @@ The Makefile auto-detects the toolchain. If the native cross-compiler is not fou
 
 ### Link Dependencies
 
-All executables are statically linked against:
+All executables are linked through the SDK Clang driver against:
 
 - `libz.a` — this library
-- `libposix.a` — from Nanvix sysroot at `$NANVIX_HOME/lib/`
-- `libc.a` — from Nanvix toolchain
-- `libm.a` — from Nanvix toolchain
-- `user.ld` — linker script from Nanvix sysroot at `$NANVIX_HOME/lib/`
+- Nanvix libc and compiler runtime — from the SDK
+- `crt0.o` and `user.ld` — selected by the SDK Clang driver
+
+The downloaded Nanvix sysroot supplies runtime binaries only.
 
 ## Quick Start
 
@@ -100,7 +101,7 @@ Override the pinned nanvix-zutil version with `NANVIX_ZUTIL_VERSION=<version>`.
 
 ```bash
 # Pull the Docker image
-docker pull ghcr.io/nanvix/toolchain-gcc:sha-34a3641
+docker pull ghcr.io/nanvix/nanvix-sdk-c-clang@sha256:f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f
 
 # Download Nanvix sysroot
 curl -fsSL https://raw.githubusercontent.com/nanvix/nanvix/refs/heads/dev/scripts/get-nanvix.sh \
@@ -118,8 +119,8 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" test
 ### Option C: Native toolchain (no Docker)
 
 ```bash
-export NANVIX_TOOLCHAIN=/path/to/toolchain   # Must contain bin/i686-nanvix-gcc
-export NANVIX_HOME=/path/to/nanvix/sysroot   # Must contain lib/user.ld, lib/libposix.a
+export NANVIX_TOOLCHAIN=/path/to/sdk         # Must contain nanvix-sdk.json and bin/clang
+export NANVIX_HOME=/path/to/nanvix/sysroot   # Runtime binaries used by tests
 make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 ```
 
@@ -128,10 +129,10 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `CONFIG_NANVIX` | *(required)* | Must be set to enable Nanvix build (recommended `y`) |
-| `NANVIX_HOME` | `$HOME/nanvix` | Path to Nanvix sysroot (must contain `lib/user.ld`) |
-| `NANVIX_TOOLCHAIN` | `/opt/nanvix` | Path to cross-compiler (must contain `bin/i686-nanvix-gcc`) |
+| `NANVIX_HOME` | `$HOME/nanvix` | Path to Nanvix runtime binaries used by tests |
+| `NANVIX_TOOLCHAIN` | `/opt/nanvix` | Path to the Nanvix SDK (must contain `nanvix-sdk.json`) |
 | `CONFIG_NANVIX_DOCKER` | *(auto)* | Set to `y` to force Docker even when native toolchain exists |
-| `NANVIX_DOCKER_IMAGE` | `ghcr.io/nanvix/toolchain-gcc:sha-34a3641` | Docker image for cross-compilation |
+| `NANVIX_DOCKER_IMAGE` | Nanvix c-clang SDK digest | Docker image for cross-compilation |
 | `PLATFORM` | `unknown` | Target platform name (`microvm`, `hyperlight`) |
 | `PROCESS_MODE` | `unknown` | Deployment mode (`standalone`) |
 | `MEMORY_SIZE` | `unknown` | Memory configuration (`128mb`, `256mb`) |
@@ -174,9 +175,10 @@ Defined in `.nanvix/nanvix.toml` and used by CI:
 | ---- | ------ |
 | Platform | `hyperlight`, `microvm` |
 | Process mode | `standalone` |
-| Memory size | `128mb`, `256mb` |
+| Memory size | `256mb` |
 
-All combinations (2 x 1 x 2 = 4) are built and tested in CI.
+Both platform configurations are built and tested at 256 MB in CI. Nanvix
+`v0.20.0` does not publish a 128 MB runtime asset.
 
 ## CI/CD
 
@@ -191,7 +193,7 @@ Uses the reusable workflow `nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.
 | Schedule | Daily at 09:00 UTC |
 | Manual | `workflow_dispatch` |
 
-All 4 platform configurations run in parallel with `fail-fast: false`.
+All platform configurations run in parallel with `fail-fast: false`.
 
 ## Limitations
 
