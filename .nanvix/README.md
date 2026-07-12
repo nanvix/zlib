@@ -175,9 +175,10 @@ Defined in `.nanvix/nanvix.toml` and used by CI:
 | ---- | ------ |
 | Platform | `hyperlight`, `microvm` |
 | Process mode | `standalone` |
-| Memory size | `128mb`, `256mb` |
+| Memory size | `256mb` |
 
-All combinations (2 x 1 x 2 = 4) are built and tested in CI.
+Both platform configurations are built and tested at 256 MB in CI. Nanvix
+`v0.20.0` does not publish a 128 MB runtime asset.
 
 ## CI/CD
 
@@ -192,7 +193,7 @@ Uses the reusable workflow `nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.
 | Schedule | Daily at 09:00 UTC |
 | Manual | `workflow_dispatch` |
 
-All 4 platform configurations run in parallel with `fail-fast: false`.
+All platform configurations run in parallel with `fail-fast: false`.
 
 ## Limitations
 
