@@ -133,9 +133,9 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 | `NANVIX_TOOLCHAIN` | `/opt/nanvix` | Path to the Nanvix SDK (must contain `nanvix-sdk.json`) |
 | `CONFIG_NANVIX_DOCKER` | *(auto)* | Set to `y` to force Docker even when native toolchain exists |
 | `NANVIX_DOCKER_IMAGE` | Nanvix c-clang SDK digest | Docker image for cross-compilation |
-| `PLATFORM` | `unknown` | Target platform name (`microvm`, `hyperlight`) |
+| `PLATFORM` | `unknown` | Target platform name (`microvm`) |
 | `PROCESS_MODE` | `unknown` | Deployment mode (`standalone`) |
-| `MEMORY_SIZE` | `unknown` | Memory configuration (`128mb`, `256mb`) |
+| `MEMORY_SIZE` | `unknown` | Memory configuration (`256mb`) |
 | `PREFIX` | `$NANVIX_HOME` | Install prefix for `make install` |
 | `DESTDIR` | *(empty)* | Staging directory prefix for `make install` |
 
@@ -158,7 +158,7 @@ make -f .nanvix/Makefile.nanvix CONFIG_NANVIX=y
 Tests are organized in three levels:
 
 1. **Smoke** (`test-smoke`) — Checks that `libz.a`, `zlib.h`, and `zconf.h` exist and that the library is non-trivially sized. No runtime environment needed.
-2. **Integration** (`test-integration`) — Builds `example.elf` and `minigzip.elf`, verifying that they link successfully against the Nanvix sysroot.
+2. **Integration** (`test-integration`) — Builds `example.elf` and `minigzip.elf`, verifying that they link successfully through the Nanvix SDK.
 3. **Functional** (`test-functional`) — Runs `example.elf` inside the Nanvix runtime via `nanvixd.elf`. Requires KVM access. A RAM filesystem image is created with `mkramfs.elf` to provide `/tmp` for test file output.
 
 Run specific levels:
@@ -173,18 +173,19 @@ Defined in `.nanvix/nanvix.toml` and used by CI:
 
 | Axis | Values |
 | ---- | ------ |
-| Platform | `hyperlight`, `microvm` |
+| Platform | `microvm` |
 | Process mode | `standalone` |
 | Memory size | `256mb` |
 
-Both platform configurations are built and tested at 256 MB in CI. Nanvix
-`v0.20.0` does not publish a 128 MB runtime asset.
+The microvm configuration is built and tested at 256 MB in CI. Nanvix
+`v0.20.0` does not publish Hyperlight or 128 MB runtime assets.
 
 ## CI/CD
 
 Workflow: `.github/workflows/nanvix-ci.yml`
 
-Uses the reusable workflow `nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.7.6` with `nanvix-zutil` version `v0.7.19`.
+Uses the reusable workflow `nanvix/workflows/.github/workflows/nanvix-ci.yml@v2.5.0`
+with `nanvix-zutil` version `v0.14.0`.
 
 | Trigger | Condition |
 | ------- | --------- |
