@@ -56,7 +56,7 @@ No other `.c` or `.h` files were modified. The compression algorithms, public AP
 | Compiler | `clang` |
 | Archiver | `llvm-ar` |
 | Ranlib | `llvm-ranlib` |
-| Docker image | `ghcr.io/nanvix/nanvix-sdk-c-clang@sha256:f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f` |
+| Docker image | Immutable coordinate from `.nanvix/nanvix.toml` |
 | CFLAGS | `-O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse` |
 | LDFLAGS | `-Wl,-z,noexecstack` |
 
@@ -100,8 +100,7 @@ Override the pinned nanvix-zutil version with `NANVIX_ZUTIL_VERSION=<version>`.
 ### Option B: Direct Make with Docker
 
 ```bash
-# Pull the Docker image
-docker pull ghcr.io/nanvix/nanvix-sdk-c-clang@sha256:f61737cb0780e6a2058c6d0bdf8ae5562db18de437173b2bcbbe6973abd3689f
+# Pull the image referenced by .nanvix/nanvix.toml before invoking Make.
 
 # Download Nanvix sysroot
 curl -fsSL https://raw.githubusercontent.com/nanvix/nanvix/refs/heads/dev/scripts/get-nanvix.sh \
