@@ -25,7 +25,6 @@
 
 .DEFAULT_GOAL=all
 EXE = .elf
-_NANVIX_DOCKER_BUILD_GOALS := all install example$(EXE) minigzip$(EXE)
 _NANVIX_GOALS := $(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))
 
 # Ensure required variables are defined
@@ -50,9 +49,10 @@ ifneq ($(filter-out clean,$(_NANVIX_GOALS)),)
   )
 endif
 
-CFLAGS = -O2 -Wall -D_GNU_SOURCE -msse2 -mfpmath=sse
+CFLAGS = -O2 -Wall -fPIC -D_GNU_SOURCE -msse2 -mfpmath=sse
 ARFLAGS = rc
 STATICLIB = libz.a
+SHAREDLIB = libz.so
 OBJZ = adler32.o crc32.o deflate.o infback.o inffast.o inflate.o inftrees.o trees.o zutil.o
 OBJG = compress.o uncompr.o gzclose.o gzlib.o gzread.o gzwrite.o
 OBJS = $(OBJZ) $(OBJG)
@@ -60,6 +60,8 @@ OBJS = $(OBJZ) $(OBJG)
 # Build Mode Variables
 # ===========================================================================
 
+# Defined here (after SHAREDLIB) so $(SHAREDLIB) expands to its value.
+_NANVIX_DOCKER_BUILD_GOALS := all install example$(EXE) minigzip$(EXE) $(SHAREDLIB)
 _BUILD := $(filter $(_NANVIX_DOCKER_BUILD_GOALS),$(_NANVIX_GOALS))
 _NONBUILD := $(filter-out $(_NANVIX_DOCKER_BUILD_GOALS),$(_NANVIX_GOALS))
 ifneq ($(_BUILD),)
@@ -85,11 +87,11 @@ NANVIX_LDFLAGS := -Wl,-z,noexecstack
 # Build Targets
 # ===========================================================================
 
-all: $(STATICLIB) $(TEST_ARTIFACTS) install
+all: $(STATICLIB) $(SHAREDLIB) $(TEST_ARTIFACTS) install
 
 # Stage built artifacts into the release/test output tree so that
 # `./z release` (which packages release_dir()) and `./z test` can find them.
-install: $(STATICLIB) $(TEST_ARTIFACTS)
+install: $(STATICLIB) $(SHAREDLIB) $(TEST_ARTIFACTS)
 	@mkdir -p $(LIB_OUT) $(INCLUDE_OUT) $(TEST_OUT)
 	cp -f $(LIB_ARTIFACTS)     $(LIB_OUT)/
 	cp -f $(INCLUDE_ARTIFACTS) $(INCLUDE_OUT)/
@@ -98,6 +100,21 @@ install: $(STATICLIB) $(TEST_ARTIFACTS)
 $(STATICLIB): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
 	-@ ($(RANLIB) $@ || true) >/dev/null 2>&1
+
+# Link libz.so from the (now PIC) static archive via --whole-archive
+# so every zlib entry point becomes part of the .so's .dynsym.  Set
+# DT_SONAME so consumers that link `-lz` against this .so emit a
+# proper DT_NEEDED entry.  libz is self-contained -- no transitive
+# .so deps -- so nothing else to record; libc / libm symbols (memcpy,
+# memset, ...) are left UND via -nostdlib and bind at dlopen time
+# against the host executable's .dynsym, the same model used by
+# the same model already used by other Nanvix shared libraries such as
+# libffi.so / libssl.so.
+$(SHAREDLIB): $(STATICLIB)
+	$(CC) -shared -fPIC -nostdlib \
+	    -Wl,-soname,$(SHAREDLIB) -Wl,-z,noexecstack \
+	    -Wl,--whole-archive $(STATICLIB) -Wl,--no-whole-archive \
+	    -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
