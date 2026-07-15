@@ -27,9 +27,8 @@ from nanvix_zutil import (
 )
 from nanvix_zutil.helpers import InitRdArgs
 from nanvix_zutil.paths import (
+    dev_out,
     dist_dir,
-    include_out,
-    lib_out,
     nanvix_root,
     out_dir,
     repo_root,
@@ -85,9 +84,9 @@ class ZlibBuild(ZScript):
             "example.elf",
             "minigzip.elf",
             # Installed artifacts staged for `./z release` / packaging.
-            str((lib_out() / "libz.a").relative_to(root)),
-            str((include_out() / "zlib.h").relative_to(root)),
-            str((include_out() / "zconf.h").relative_to(root)),
+            str((dev_out() / "lib" / "libz.a").relative_to(root)),
+            str((dev_out() / "include" / "zlib.h").relative_to(root)),
+            str((dev_out() / "include" / "zconf.h").relative_to(root)),
             str((test_out() / "example.elf").relative_to(root)),
             str((test_out() / "minigzip.elf").relative_to(root)),
         ]
@@ -126,8 +125,8 @@ class ZlibBuild(ZScript):
             f"NANVIX_ROOT={translate(nanvix_root())}",
             f"OUT_DIR={translate(out_dir())}",
             f"DIST_DIR={translate(dist_dir())}",
-            f"LIB_OUT={translate(lib_out())}",
-            f"INCLUDE_OUT={translate(include_out())}",
+            f"LIB_OUT={translate(dev_out() / 'lib')}",
+            f"INCLUDE_OUT={translate(dev_out() / 'include')}",
             f"TEST_OUT={translate(test_out())}",
         ]
         args.extend(targets)
