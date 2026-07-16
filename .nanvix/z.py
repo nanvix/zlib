@@ -174,7 +174,6 @@ class ZlibBuild(ZScript):
 
         # Bundle example.elf + daemons into an initrd.
         initrd = make_initrd(
-            self,
             repo_root() / "example.elf",
             test_out(),
             args=InitRdArgs(app_args=["tmp/zlib_test"]),
@@ -280,7 +279,6 @@ class ZlibBuild(ZScript):
             print(f"RUN  {name}...")
             # Bundle the test program in an initrd image.
             initrd = make_initrd(
-                self,
                 binary,
                 test_out(),
                 args=InitRdArgs(app_args=["/tmp/zlib_test"]),
