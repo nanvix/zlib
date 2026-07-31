@@ -11,7 +11,6 @@ Usage:
     ./z clean     # Remove build artifacts
 """
 
-import dataclasses
 import sys
 from pathlib import Path
 
@@ -66,20 +65,17 @@ class ZlibBuild(ZScript):
         "bin/mkramfs.exe",
     )
 
-    def docker_config(self, image: str) -> DockerConfig:
-        """Extend the default Docker config with build artifact copy-back.
+    def _docker_output_files(self) -> list[str]:
+        """Build artifacts to copy back from the container to the host
+        workspace so that ``./z test`` and ``./z release`` can find them.
 
+        Paths are relative to the workspace mount root (i.e. repo_root()).
         On Windows the build runs in a container-local directory (tar-copy
         mode), so output files must be explicitly copied back to the
         workspace mount; otherwise `./z test` cannot find example.elf.
         """
-        cfg = super().docker_config(image)
-        # Build artifacts produced inside the container that must be copied
-        # back to the host workspace so that `./z test` and `./z release`
-        # can find them. Paths are relative to the workspace mount root
-        # (i.e. repo_root()).
         root = repo_root()
-        output_files = [
+        return [
             # In-tree build artifacts (legacy locations used by tests).
             "libz.a",
             "example.elf",
@@ -91,13 +87,12 @@ class ZlibBuild(ZScript):
             str((test_out() / "example.elf").relative_to(root)),
             str((test_out() / "minigzip.elf").relative_to(root)),
         ]
-        return dataclasses.replace(cfg, output_files=output_files)
 
-    def _make_args(self, *targets: str) -> list[str]:
+    def _make_args(self, docker: DockerConfig | None, *targets: str) -> list[str]:
         """Build the common make argument list.
 
         Path translation for ``NANVIX_HOME`` is applied when running
-        under Docker (i.e. ``self.docker`` is set).  Recipes that
+        under Docker (i.e. a ``docker`` config is supplied).  Recipes that
         execute purely on the host receive the raw host path.
         """
         sysroot = self.config.get(CFG_SYSROOT, "")
@@ -109,7 +104,7 @@ class ZlibBuild(ZScript):
             )
 
         def translate(p: Path):
-            return translate_path(self.docker.mounts, p) if self.docker else p
+            return translate_path(docker.mounts, p) if docker else p
 
         args = [
             "make",
@@ -137,9 +132,10 @@ class ZlibBuild(ZScript):
         """Download the Nanvix sysroot."""
         return super().setup()
 
-    def build(self) -> None:
+    def build(self, docker: DockerConfig) -> None:
         """Cross-compile libz.a for Nanvix."""
-        run(*self._make_args("all"), cwd=repo_root(), docker=self.docker)
+        docker.output_files = self._docker_output_files()
+        run(*self._make_args(docker, "all"), cwd=repo_root(), docker=docker)
 
     def test(self) -> None:
         """Run the zlib test suite.
